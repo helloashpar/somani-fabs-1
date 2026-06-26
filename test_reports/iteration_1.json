@@ -1,0 +1,39 @@
+{
+  "summary": "Backend-only testing for Somani Fabs unstitched-fabric admin API. All 23 pytest cases passed against the external preview URL, including a real Gemini gemini-3-pro-image try-on generation. Auth (super login, /auth/me, wrong-password 401, missing token 401), admin CRUD + 403 enforcement, default categories seeded, session create/customer reuse/search/active/get, Gemini trial generation, live display preview/state/wrong-secret/clear, end session + history + /stats earnings + customer profile stats, super-only config CRUD (categories & fields), Excel export (xlsx), and logs (login, create_session, generate_trial, end_session) all verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/sessions/today", "issue": "Uses datetime.fromisoformat on bare YYYY-MM-DD then .replace(tzinfo=IST) - if a full ISO datetime is passed with offset it will error; minor edge case."},
+      {"endpoint": "/api/sessions/{sid}/photo", "issue": "Accepts raw Dict[str,str] without Pydantic validation - missing 'photo' key throws KeyError -> 500 instead of 400."},
+      {"endpoint": "/api/display/preview", "issue": "Same as above - raw Dict body, missing 'trial_id' yields 500 not 422."},
+      {"endpoint": "/api/settings (GET)", "issue": "Non-super admins can read display_secret. Consider restricting or returning only public fields to non-super roles."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: wrap raw Dict bodies (display/preview, sessions/photo, settings PUT) in Pydantic models for proper 422 errors.",
+    "Optional: hide display_secret from non-super admins on /api/settings."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~640 lines and contains all routes; could be split into modules (auth, sessions, trials, display, config, stats) for maintainability.",
+    "log_action does not capture IP/user-agent; consider adding request context.",
+    "trials TTL is mentioned but no MongoDB TTL index is created on expires_at - only a plain index on created_at. expires_at field is set but documents will not auto-expire.",
+    "fabric_thumb stored as full fabric base64 (not a small thumbnail) - inflates trial document size; consider resizing before persistence.",
+    "JWT_SECRET, GEMINI_API_KEY committed in /app/backend/.env; ensure these are not leaked to repo.",
+    "CORS allow_origins defaults to '*' with allow_credentials=True - browsers reject this combo; tighten in production."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Super admin: username=superashwini, password=6Lr£1Wp2VD`Q (special £ and backtick chars - send as JSON, works fine).",
+  "seed_data_creation": "Tests create TEST_ prefixed admins/customers/sessions during the run and clean up at the end (test_delete_test_admin, test_zz_cleanup_sessions, and add/delete category/field). One TEST_ customer document may remain (no customer delete endpoint exists).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tests live in /app/backend/tests/backend_test.py and are run with the default pytest.ini (-n 2 --dist loadscope). Dependent flow tests are deliberately consolidated into class TestSessionFlow so xdist's loadscope keeps shared_state on one worker. The Gemini call is real and takes ~10-20s; total suite ~24s. If you add new stateful tests, put them inside TestSessionFlow or create another self-contained class.",
+  "rca of the issue": "N/A - no failures. Initial run had 6 spurious failures because pytest-xdist (-n 2 --dist loadscope) splits test classes across workers, so a session-scoped shared_state fixture was not shared between classes. Fixed by consolidating all stateful dependent tests under one class (TestSessionFlow) which loadscope pins to a single worker."
+}
