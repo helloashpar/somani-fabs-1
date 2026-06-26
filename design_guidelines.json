@@ -1,0 +1,178 @@
+{
+  "project_name": "Somani Fabs - Heritage Shop & Admin Platform",
+  "theme_and_archetype": {
+    "public_landing": {
+      "theme": "Light",
+      "archetype": "Archetype 1 (Organic & Earthy)",
+      "vibe": "Heritage, Trust, Traditional, Premium Indian Textile",
+      "reasoning": "A heritage fabric shop needs to convey legacy and trust. Warm earthy tones mixed with deep rich textile colors evoke Indian tradition."
+    },
+    "admin_app": {
+      "theme": "Light",
+      "archetype": "Archetype 4 (Swiss & High-Contrast)",
+      "vibe": "Utilitarian, Fast, Efficient",
+      "reasoning": "The admin app is a mobile-first POS and session tracking tool. It needs high clarity, dense data presentation, and clear action hierarchies."
+    },
+    "led_display": {
+      "theme": "Dark",
+      "archetype": "Archetype 4 (Swiss & High-Contrast)",
+      "vibe": "Minimal, Legible, Cinematic",
+      "reasoning": "Fullscreen display requires deep blacks to blend with screen bezels and high contrast for live try-on image visibility from afar."
+    }
+  },
+  "typography": {
+    "public_landing": {
+      "headings": {
+        "family": "Playfair Display",
+        "fallback": "serif",
+        "weight": "font-black",
+        "tracking": "tracking-tight",
+        "usage": "Hero headers, section titles to convey heritage."
+      },
+      "body": {
+        "family": "Outfit",
+        "fallback": "sans-serif",
+        "weight": "font-light",
+        "leading": "leading-relaxed",
+        "usage": "Storytelling, descriptions."
+      }
+    },
+    "admin_app": {
+      "headings": {
+        "family": "Work Sans",
+        "fallback": "sans-serif",
+        "weight": "font-semibold",
+        "tracking": "tracking-tight",
+        "usage": "Dashboard widgets, session cards, modal headers."
+      },
+      "body": {
+        "family": "IBM Plex Sans",
+        "fallback": "sans-serif",
+        "weight": "font-normal",
+        "usage": "Dense data, forms, input fields."
+      }
+    },
+    "scale_rules": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl",
+      "h3": "text-xl sm:text-2xl",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base sm:text-sm",
+      "label": "text-xs tracking-[0.2em] uppercase"
+    }
+  },
+  "color_palette": {
+    "public_landing": {
+      "background": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "primary": "#1D3557",
+      "accent": "#E07A5F",
+      "text_main": "#1A1A1A",
+      "text_muted": "#4B5563",
+      "border": "#E5E7EB"
+    },
+    "admin_app": {
+      "background": "#F3F4F6",
+      "surface": "#FFFFFF",
+      "primary": "#1E3A8A",
+      "accent": "#DC2626",
+      "success": "#059669",
+      "text_main": "#111827",
+      "text_muted": "#6B7280",
+      "border": "#D1D5DB"
+    },
+    "led_display": {
+      "background": "#000000",
+      "surface": "#111111",
+      "text_main": "#FFFFFF",
+      "text_muted": "#A3A3A3"
+    },
+    "rules": {
+      "tinted_grey": "Never use pure #808080. Always tint greys with a touch of blue (for admin) or warm orange (for public).",
+      "contrast": "Ensure minimum 4.5:1 ratio for normal text. Overlays on images must be bg-black/40."
+    }
+  },
+  "layout_and_spacing": {
+    "public_landing": {
+      "grid_mode": "Mode A (Tetris Grid) - grid-cols-1 md:grid-cols-12, wide gaps (gap-8 to gap-12).",
+      "spacing_scale": "Generous (p-12, p-16, p-24) to allow storytelling breathing room.",
+      "alignment": "Left-aligned content inside asymmetric grid blocks."
+    },
+    "admin_app": {
+      "grid_mode": "Mode B (Control Room Grid) - dense, grid-cols-1 md:grid-cols-3, gap-4.",
+      "spacing_scale": "Compact (p-4, p-6) for high data density.",
+      "cards": "Flat solid surfaces, 1px subtle border, max rounded-lg, no shadows unless hovering."
+    },
+    "led_display": {
+      "grid_mode": "CSS Grid (grid-cols-1, 2, or 4 depending on active splits). No gaps, full bleed images.",
+      "spacing_scale": "Absolute minimum. Metadata overlaid at bottom."
+    }
+  },
+  "components_strategy": {
+    "public_landing": {
+      "structure": "Pure HTML/Tailwind. Avoid Shadcn containers to allow overlapping and asymmetry.",
+      "header": "Crystal Glassmorphism (backdrop-blur-xl bg-white/70, border-b border-white/20, z-50).",
+      "marquee": "Slow 'Editorial Ribbon' for brands (Donear, Raymond, Siyaram's). Pale bg, dark text, gap-32.",
+      "hero_overlay": "bg-black/40 over the shop facade image to ensure white text readability."
+    },
+    "admin_app": {
+      "structure": "Heavily customized Shadcn UI components for rapid operational flow.",
+      "session_cards": "Grid Items (col-span-1), solid white bg, border-border, displaying customer mobile, name, and start time.",
+      "camera_capture_ui": {
+        "layout": "Fullscreen or max-height modal on mobile.",
+        "button": "Large thumb-zone shutter button (h-16 w-16, rounded-full, bottom-8, absolute).",
+        "preview": "Real-time camera feed taking 80vh. Immediate post-capture thumbnail reveal.",
+        "guide": "Overlay framing guide with green ready indicator."
+      },
+      "tryon_list": "Table or dense list view (Fabric Thumbnail | Try-on Thumbnail | Desc | View Button).",
+      "forms": "Shadcn Form, Input, Select. Left-aligned labels."
+    }
+  },
+  "motion_and_interactions": {
+    "public_landing": {
+      "scroll": "Smooth scrolling (Lenis highly recommended).",
+      "entrance": "Fade-in and slight translate-y on scroll for storytelling blocks."
+    },
+    "admin_app": {
+      "feedback": "Micro-interactions. Active states must be visibly darker. Toast notifications for session updates.",
+      "transitions": "Instant or 150ms max. Optimize for speed."
+    }
+  },
+  "testing": {
+    "attributes": "All interactive elements (buttons, links, inputs) MUST include `data-testid` in kebab-case, role-based format (e.g., `data-testid=\"start-session-btn\"`)."
+  },
+  "media_assets": {
+    "instructions_to_main_agent": "Use these EXACT URLs for the respective sections. Do NOT use placeholder domains like via.placeholder.com.",
+    "public_hero_background": {
+      "url": "https://images.unsplash.com/photo-1634484675974-d3d30cdc0fc7",
+      "description": "Moody Indian shop facade to serve as the heritage background. Apply bg-black/40 overlay."
+    },
+    "heritage_fabric_patterns": [
+      {
+        "url": "https://images.unsplash.com/photo-1660845683010-63e7422420b9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxJbmRpYW4lMjB0cmFkaXRpb25hbCUyMGZhYnJpYyUyMHRleHRpbGUlMjBwYXR0ZXJufGVufDB8fHx8MTc4MjQ2NjEzMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Traditional Indian fabric pattern for the 'About the Shop' section."
+      },
+      {
+        "url": "https://images.pexels.com/photos/4566670/pexels-photo-4566670.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Colorful traditional patterns in Jaipur for storytelling blocks."
+      }
+    ],
+    "suiting_fabric_rolls": [
+      {
+        "url": "https://images.pexels.com/photos/6766360/pexels-photo-6766360.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Folded suiting fabrics for the 'What we sell' section."
+      },
+      {
+        "url": "https://images.pexels.com/photos/17329670/pexels-photo-17329670.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Textile rolls on display to showcase inventory."
+      }
+    ],
+    "brands": {
+      "note": "Use typography-based logos for Donear, Raymond, and Siyaram's using Playfair Display or a crisp sans-serif, as generic image logos break immersion."
+    }
+  },
+  "language_toggle": {
+    "behavior": "Global state toggle (Hinglish / English / Hindi) persisting in localStorage.",
+    "ui_placement": "Top right of Crystal Header in Public app. Settings drawer in Admin app."
+  }
+}
