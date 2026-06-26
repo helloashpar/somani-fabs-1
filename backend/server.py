@@ -386,7 +386,7 @@ async def generate_trial(sid: str, body: GenerateIn, user=Depends(get_current_us
         "garments": [{"slot": g.get("slot"), "garment_type": g.get("garment_type"),
                       "fabric_b64": g.get("fabric_b64")} for g in body.garments],
         "fabric_thumb": fabric_thumb, "generated_image": image, "description": description,
-        "created_at": iso(), "expires_at": (now_utc() + timedelta(days=7)).isoformat()}
+        "created_at": iso(), "expire_at": now_utc() + timedelta(days=7)}
     await db.trials.insert_one(doc)
     await log_action(user, "generate_trial", f"Session {sid}: {description}")
     doc.pop("_id", None)
@@ -625,6 +625,7 @@ async def startup():
     # TTL on trials (7 days) via expires_at index
     try:
         await db.trials.create_index("created_at")
+        await db.trials.create_index("expire_at", expireAfterSeconds=0)
         await db.live_previews.create_index("updated_at")
         await db.customers.create_index("mobile")
     except Exception:
