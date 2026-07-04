@@ -201,6 +201,39 @@ async def customer_stats(customer_id):
     }
 
 
+async def bulk_customer_stats():
+    """Aggregate stats for all customers in a single query (avoids N+1)."""
+    pipeline = [
+        {"$group": {
+            "_id": "$customer_id",
+            "total_sessions": {"$sum": 1},
+            "purchased_count": {
+                "$sum": {"$cond": [{"$eq": ["$purchased", True]}, 1, 0]}},
+            "not_purchased_count": {
+                "$sum": {"$cond": [
+                    {"$and": [{"$eq": ["$status", "closed"]},
+                              {"$ne": ["$purchased", True]}]}, 1, 0]}},
+            "total_collected": {
+                "$sum": {"$cond": [
+                    {"$eq": ["$purchased", True]},
+                    {"$toDouble": {"$ifNull": ["$final_paid", 0]}}, 0]}},
+        }},
+    ]
+    stats = {}
+    async for row in db.sessions.aggregate(pipeline):
+        stats[row["_id"]] = {
+            "total_sessions": row["total_sessions"],
+            "purchased_count": row["purchased_count"],
+            "not_purchased_count": row["not_purchased_count"],
+            "total_collected": row["total_collected"],
+        }
+    return stats
+
+
+EMPTY_STATS = {"total_sessions": 0, "purchased_count": 0,
+               "not_purchased_count": 0, "total_collected": 0}
+
+
 @api.get("/customers/search")
 async def search_customers(q: str, user=Depends(get_current_user)):
     if not q or len(q) < 2:
@@ -216,17 +249,19 @@ async def search_customers(q: str, user=Depends(get_current_user)):
 @api.get("/customers")
 async def list_customers(user=Depends(get_current_user)):
     res = await db.customers.find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    stats = await bulk_customer_stats()
     for c in res:
-        c["stats"] = await customer_stats(c["id"])
+        c["stats"] = stats.get(c["id"], dict(EMPTY_STATS))
     return res
 
 
 @api.get("/customers/export")
 async def export_customers(user=Depends(get_current_user)):
     customers = await db.customers.find({}, {"_id": 0, "photo": 0}).to_list(5000)
+    stats = await bulk_customer_stats()
     rows = []
     for c in customers:
-        st = await customer_stats(c["id"])
+        st = stats.get(c["id"], dict(EMPTY_STATS))
         row = {
             "Name": c.get("name"), "Primary Mobile": c.get("mobile"),
             "Secondary Mobile": c.get("mobile2", ""), "Created At": c.get("created_at"),
