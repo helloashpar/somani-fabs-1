@@ -623,6 +623,11 @@ async def root():
 
 @app.get("/health")
 async def health():
+    try:
+        await client.admin.command("ping")
+    except Exception as e:
+        logger.error(f"Health check DB ping failed: {e}")
+        raise HTTPException(503, "Database unavailable")
     return {"status": "ok"}
 
 
