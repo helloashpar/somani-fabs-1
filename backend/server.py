@@ -5,6 +5,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import uuid
+import asyncio
 import logging
 import io
 from datetime import datetime, timezone, timedelta
@@ -22,7 +23,13 @@ from typing import List, Optional, Dict, Any
 import gemini_service
 
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(
+    mongo_url,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=20000,
+    retryWrites=True,
+)
 db = client[os.environ['DB_NAME']]
 
 JWT_SECRET = os.environ['JWT_SECRET']
@@ -607,8 +614,7 @@ DEFAULT_CATEGORIES = [
 ]
 
 
-@app.on_event("startup")
-async def startup():
+async def _seed_database():
     import secrets as _secrets
     # seed super admin
     su_user = os.environ["SUPER_ADMIN_USERNAME"]
@@ -639,7 +645,31 @@ async def startup():
         await db.customers.create_index("mobile")
     except Exception:
         pass
-    logger.info("Startup complete")
+
+
+async def _seed_with_retry():
+    """Retry DB seeding in the background so the server can bind to the port
+    immediately even if MongoDB (Atlas) SSL handshake is slow/transient."""
+    delay = 2
+    for attempt in range(1, 16):
+        try:
+            await _seed_database()
+            logger.info("Database seeding complete (attempt %d)", attempt)
+            return
+        except Exception as e:
+            logger.warning("Seeding attempt %d failed: %s. Retrying in %ss",
+                           attempt, e, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
+    logger.error("Database seeding failed after all retries")
+
+
+@app.on_event("startup")
+async def startup():
+    # Kick off seeding in background so startup never blocks/crashes on a slow
+    # DB connection. This lets FastAPI bind to the port and pass /health probe.
+    asyncio.create_task(_seed_with_retry())
+    logger.info("Startup complete (seeding running in background)")
 
 
 @app.on_event("shutdown")
