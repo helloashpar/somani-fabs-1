@@ -488,7 +488,7 @@ async def set_preview(body: Dict[str, str], user=Depends(get_current_user)):
         {"$set": {
             "admin_id": user["id"], "admin_username": user["username"],
             "trial_id": trial["id"], "session_id": trial["session_id"],
-            "image": trial["generated_image"], "description": trial["description"],
+            "description": trial["description"],
             "customer_name": session["customer_name"] if session else "",
             "start_time": session["start_time"] if session else "",
             "updated_at": iso()}},
@@ -517,6 +517,10 @@ async def display_state(secret: str):
     previews = await db.live_previews.find(
         {"updated_at": {"$gte": cutoff}}, {"_id": 0}
     ).sort("updated_at", 1).to_list(8)
+    for p in previews:
+        trial = await db.trials.find_one({"id": p.get("trial_id")}, {"_id": 0, "generated_image": 1})
+        p["image"] = trial["generated_image"] if trial else ""
+    previews = [p for p in previews if p.get("image")]
     return {"previews": previews, "idle_image": s.get("idle_image", "")}
 
 
