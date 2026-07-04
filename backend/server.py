@@ -558,6 +558,11 @@ async def root():
     return {"message": "Somani Fabs API"}
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware, allow_credentials=True,
