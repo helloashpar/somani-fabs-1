@@ -569,17 +569,22 @@ async def display_state(secret: str, v: Optional[str] = None):
     ).sort("updated_at", 1).to_list(8)
     # version reflects which trials are live + idle image; changes only when the
     # visible content changes. Lets clients skip re-downloading base64 images.
-    raw_v = "|".join(str(p.get("trial_id")) for p in previews)
-    raw_v += "#" + (s.get("idle_image") or "")[:32]
+    idle_img = s.get("idle_image") or ""
+    idle_sig = hashlib.md5(idle_img.encode()).hexdigest()
+    raw_v = "|".join(str(p.get("trial_id")) for p in previews) + "#" + idle_sig
     version = hashlib.md5(raw_v.encode()).hexdigest()
     if v and v == version:
         return {"unchanged": True, "version": version}
+    trial_ids = [p.get("trial_id") for p in previews]
+    images = {}
+    if trial_ids:
+        async for tr in db.trials.find(
+            {"id": {"$in": trial_ids}}, {"_id": 0, "id": 1, "generated_image": 1}):
+            images[tr["id"]] = tr.get("generated_image", "")
     for p in previews:
-        trial = await db.trials.find_one(
-            {"id": p.get("trial_id")}, {"_id": 0, "generated_image": 1})
-        p["image"] = trial["generated_image"] if trial else ""
+        p["image"] = images.get(p.get("trial_id"), "")
     previews = [p for p in previews if p.get("image")]
-    return {"previews": previews, "idle_image": s.get("idle_image", ""), "version": version}
+    return {"previews": previews, "idle_image": idle_img, "version": version}
 
 
 # ---------- Stats ----------

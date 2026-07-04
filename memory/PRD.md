@@ -34,6 +34,12 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - Fixed N+1 query blocker: `bulk_customer_stats()` computes stats for all customers in ONE aggregation ($group). Used in /api/customers and /api/customers/export.
 - deployment_agent: PASS. Verified via curl (login, customers, export=200 xlsx).
 
+## Intermittent 500 Fix (2026-06)
+- ROOT CAUSE of production intermittent 500s (login/sessions/generation) + endless buffering + "session sometimes missing": the public `/api/display/{secret}/state` endpoint (polled every 2s by the 24/7 LED display) returned FULL base64 `generated_image` for up to 8 previews on EVERY poll, starving the Mongo connection pool. Amplified by my earlier aggressive timeouts (serverSelectionTimeoutMS=5000/socketTimeoutMS=20000).
+- FIXES: (1) production-safe Motor client (serverSelectionTimeoutMS=30000, connectTimeoutMS=20000, socketTimeoutMS=45000, maxPoolSize=50, maxIdleTimeMS=60000, retryWrites/retryReads); (2) display_state now returns a version/ETag — clients pass ?v=<version> and get {unchanged:true} (tiny payload) when nothing changed, images only sent on change; batched trial image fetch via $in (no N+1); (3) get_session trials projection excludes unused garments.fabric_b64 to shrink payload.
+- Frontend Display.js sends last version and skips re-render when unchanged.
+- Verified: testing_agent iteration_2 — 42/42 backend tests pass, zero 5xx under sequential+parallel hammer load. NOTE: fix must be REDEPLOYED to production to take effect.
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.
