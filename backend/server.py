@@ -6,6 +6,7 @@ load_dotenv(ROOT_DIR / '.env')
 import os
 import uuid
 import asyncio
+import hashlib
 import logging
 import io
 from datetime import datetime, timezone, timedelta
@@ -25,10 +26,14 @@ import gemini_service
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(
     mongo_url,
-    serverSelectionTimeoutMS=5000,
-    connectTimeoutMS=10000,
-    socketTimeoutMS=20000,
+    serverSelectionTimeoutMS=30000,
+    connectTimeoutMS=20000,
+    socketTimeoutMS=45000,
+    maxPoolSize=50,
+    minPoolSize=0,
+    maxIdleTimeMS=60000,
     retryWrites=True,
+    retryReads=True,
 )
 db = client[os.environ['DB_NAME']]
 
@@ -363,7 +368,9 @@ async def get_session(sid: str, user=Depends(get_current_user)):
     s = await db.sessions.find_one({"id": sid}, {"_id": 0})
     if not s:
         raise HTTPException(404, "Session not found")
-    s["trials"] = await db.trials.find({"session_id": sid}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+    s["trials"] = await db.trials.find(
+        {"session_id": sid}, {"_id": 0, "garments.fabric_b64": 0}
+    ).sort("created_at", 1).to_list(1000)
     return s
 
 
@@ -551,19 +558,28 @@ async def clear_preview(user=Depends(get_current_user)):
 
 
 @api.get("/display/{secret}/state")
-async def display_state(secret: str):
-    s = await db.settings.find_one({"id": "global"})
+async def display_state(secret: str, v: Optional[str] = None):
+    s = await db.settings.find_one(
+        {"id": "global"}, {"_id": 0, "display_secret": 1, "idle_image": 1})
     if not s or s.get("display_secret") != secret:
         raise HTTPException(404, "Not found")
     cutoff = (now_utc() - timedelta(seconds=12)).isoformat()
     previews = await db.live_previews.find(
         {"updated_at": {"$gte": cutoff}}, {"_id": 0}
     ).sort("updated_at", 1).to_list(8)
+    # version reflects which trials are live + idle image; changes only when the
+    # visible content changes. Lets clients skip re-downloading base64 images.
+    raw_v = "|".join(str(p.get("trial_id")) for p in previews)
+    raw_v += "#" + (s.get("idle_image") or "")[:32]
+    version = hashlib.md5(raw_v.encode()).hexdigest()
+    if v and v == version:
+        return {"unchanged": True, "version": version}
     for p in previews:
-        trial = await db.trials.find_one({"id": p.get("trial_id")}, {"_id": 0, "generated_image": 1})
+        trial = await db.trials.find_one(
+            {"id": p.get("trial_id")}, {"_id": 0, "generated_image": 1})
         p["image"] = trial["generated_image"] if trial else ""
     previews = [p for p in previews if p.get("image")]
-    return {"previews": previews, "idle_image": s.get("idle_image", "")}
+    return {"previews": previews, "idle_image": s.get("idle_image", ""), "version": version}
 
 
 # ---------- Stats ----------

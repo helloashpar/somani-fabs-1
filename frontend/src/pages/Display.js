@@ -15,11 +15,16 @@ export default function Display() {
   const [previews, setPreviews] = useState([]);
   const [idle, setIdle] = useState("");
   const timer = useRef(null);
+  const version = useRef(null);
 
   useEffect(() => {
     const poll = async () => {
       try {
-        const { data } = await axios.get(`${API}/display/${secret}/state`);
+        const { data } = await axios.get(`${API}/display/${secret}/state`, {
+          params: version.current ? { v: version.current } : {},
+        });
+        if (data.unchanged) return;
+        version.current = data.version;
         setPreviews(data.previews || []);
         setIdle(data.idle_image || "");
       } catch (e) { /* keep last */ }

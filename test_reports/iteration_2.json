@@ -1,0 +1,41 @@
+{
+  "summary": "Backend regression testing for the production 500-fix (connection-pool starvation) on Somani Fabs. Added 19 new stability tests in /app/backend/tests/test_stability_fixes.py covering the display-state ETag/version optimisation, login stability, active sessions repeat load, session-detail fabric_b64 exclusion, /customers stats + xlsx export, and 20x hammer runs (sequential + 10-worker parallel) on settings, sessions/active, and display/state. All 19 new tests pass. All 23 pre-existing tests in backend_test.py still pass (42/42 total, ~110s including one real Gemini call).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/display/{secret}/state", "issue": "When v matches and unchanged=true is returned, response omits idle_image too. If idle_image changes but a client keeps the previous version cached, it will still get unchanged. Because the version hash mixes trial ids + first 32 chars of idle_image this mostly works, but truncating to 32 chars means two different idle_images with identical first-32-chars would collide (rare, but possible with base64 headers like data:image/jpeg;base64,)."},
+      {"endpoint": "/api/display/{secret}/state", "issue": "For each poll (when v mismatches) it does a separate db.trials.find_one() per preview inside a for-loop (N+1). With up to 8 previews this is 8 sequential Mongo round-trips. Consider $lookup or a single $in query."},
+      {"endpoint": "/api/sessions/today", "issue": "(carried over from iter 1) datetime.fromisoformat(date).replace(tzinfo=IST) breaks if a full ISO datetime is supplied."},
+      {"endpoint": "/api/sessions/{sid}/photo & /api/display/preview", "issue": "(carried over) Raw Dict body -> missing keys yield 500 instead of 422."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_stability_fixes.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/stability_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: batch the per-preview db.trials.find_one() into a single $in query in display_state() for further payload/latency wins.",
+    "Optional: include a small hash of idle_image (full length or sha) rather than [:32] slice to avoid theoretical version collisions.",
+    "Optional: consider a Cache-Control/ETag HTTP header on /display/state so browsers/proxies can leverage 304 as well.",
+    "Carry-overs from iter 1 (still open): wrap raw Dict bodies in Pydantic; hide display_secret from non-super admins."
+  ],
+  "critical_code_review_comments": [
+    "display_state() version scheme mixes trial_ids (order-preserving via sort updated_at asc) + first 32 chars of idle_image via md5 — correct in practice, but the [:32] slice on a base64 data URL means the first 32 chars are almost always 'data:image/jpeg;base64,/9j/4AAQ' which is identical across many jpegs. It works today only because idle_image changes are captured by trial_ids first. Consider hashing the full idle_image or its length+first-16+last-16 chars.",
+    "Mongo pool tuning (maxPoolSize=50, socketTimeoutMS=45000, retryWrites/reads) looks reasonable. Note: motor default is 100, so this is a REDUCTION; monitor in prod under high concurrency.",
+    "server.py is now 729 lines (up from ~640); splitting into modules (auth, sessions, trials, display, config, stats) is still recommended.",
+    "get_session() projection {'garments.fabric_b64': 0} correctly strips heavy field per document — verified by test that fabric_b64 is not in trial garments while generated_image + fabric_thumb remain."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_stability_fixes.py (new)"
+  ],
+  "success_rate": {"backend": "100% (42/42: 19 new + 23 pre-existing)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Super admin: username=superashwini, password=6Lr£1Wp2VD`Q",
+  "seed_data_creation": "Creates a TEST_Stability customer + one active session + one Gemini-generated trial + a live preview record. Fixture teardown clears the live preview and deletes the session (which also deletes trials). Customer record remains (no delete endpoint).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New stability tests live in /app/backend/tests/test_stability_fixes.py (uses module-scoped fixtures + xdist loadscope-safe). Both test files are pytest-xdist ready under pytest.ini (-n 2 --dist loadscope). Full suite runs in ~110s (Gemini calls dominate). If you add new tests that need the seeded session with a trial, reuse the seeded_session_with_trial fixture pattern. All 5xx checks in TestHammer will surface pool-starvation regressions.",
+  "rca of the issue": "N/A — this iteration verifies E1's fix for the intermittent-500 issue caused by /display/state returning full base64 images every 2s poll (up to 8 previews). The new ETag/version scheme was validated: (1) first call returns {version, previews[with images], idle_image}; (2) subsequent calls with matching ?v return {unchanged:true, version} in <2KB payload (no images); (3) mismatched or absent v returns full state; (4) sequential 20x + parallel 10-worker 20x runs on /display/state, /settings, /sessions/active all returned 200 with zero 5xx. The fabric_b64 exclusion on /sessions/{sid}.trials.garments was verified: generated_image and fabric_thumb are present, fabric_b64 is not. Login stability confirmed (200 for correct, 401 for wrong, 5 sequential logins all 200)."
+}
