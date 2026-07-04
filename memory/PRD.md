@@ -29,6 +29,11 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - End session, customer DB + Excel export, customer profile w/ lifetime stats, session history (edit purchase / delete), statistics by date range, super-admin config (categories/items, session fields), 7-day TTL on trial images.
 - Backend tested 23/23 (incl. real Gemini try-on).
 
+## Deployment Fixes (2026-06)
+- Fixed prod startup crash (ServerSelectionTimeoutError / SSL EOF): added Motor client timeouts (serverSelectionTimeoutMS/connectTimeoutMS/socketTimeoutMS, retryWrites) and moved all DB seeding into a background `_seed_with_retry()` asyncio task with exponential backoff, so FastAPI binds to port 8001 & passes /health probe immediately.
+- Fixed N+1 query blocker: `bulk_customer_stats()` computes stats for all customers in ONE aggregation ($group). Used in /api/customers and /api/customers/export.
+- deployment_agent: PASS. Verified via curl (login, customers, export=200 xlsx).
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.
