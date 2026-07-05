@@ -70,8 +70,9 @@ def _build_prompt(garments, light_fabric):
 
     g_lines = []
     for g in garments:
-        g_lines.append(f"- {g['slot']}: a well-tailored, properly fitted {g['garment_type']} "
-                       f"stitched from the fabric shown in the corresponding reference fabric image.")
+        g_lines.append(f"- {g['slot']}: a well-tailored, properly fitted, crisply ironed and "
+                       f"completely wrinkle-free {g['garment_type']} stitched from the fabric shown "
+                       f"in the corresponding reference fabric image, with smooth crease-free sleeves.")
     garment_text = "\n".join(g_lines)
 
     return f"""You are a professional commercial virtual try-on studio engine for an unstitched-fabric retail shop. Money is involved, so accuracy is critical.
@@ -89,6 +90,8 @@ ABSOLUTE, NON-NEGOTIABLE CONSTRAINTS:
 
 GARMENTS TO RENDER (tailored, realistic stitching, natural folds and drape):
 {garment_text}
+
+GARMENT FINISH (IMPORTANT): Every garment must look freshly pressed and professionally ironed — crisp, smooth and completely wrinkle-free fabric with NO creases or wrinkles anywhere, especially NONE at the sleeves. The fit must be clean and well-tailored (neither baggy nor tight), sitting neatly on the body.
 
 BACKGROUND: Place the customer against {bg}. Soft, even, professional studio lighting. No props, no text, no watermark.
 

@@ -40,6 +40,13 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - Frontend Display.js sends last version and skips re-render when unchanged.
 - Verified: testing_agent iteration_2 — 42/42 backend tests pass, zero 5xx under sequential+parallel hammer load. NOTE: fix must be REDEPLOYED to production to take effect.
 
+## Async Try-On Generation + Auto-preview + Prompt tweak (2026-06)
+- FIXED Cloudflare "origin did not respond in time" false alarm during image generation: POST /sessions/{sid}/trials/generate now inserts a trial with status="generating" and returns IMMEDIATELY; generation runs in a background asyncio task (_run_generation) that updates the trial to status="done" (with generated_image) or "failed" (with error). New GET /trials/{tid} lets the client poll. No more long-held request → no origin/Cloudflare timeout.
+- Frontend NewTrial.js polls GET /trials/{tid} every 3s (2.5s first) up to 180s; on done calls onDone(completedTrial), on failed shows toast. Uses a cancelled ref to stop polling on unmount.
+- SessionView onDone now auto-opens the completed trial's PreviewModal (setPreview(newTrial)) so the image shows immediately; closing it reveals the refreshed trials list.
+- Gemini prompt (gemini_service.py) updated: garments must be crisply ironed, completely wrinkle-free, well-fitted, with smooth crease-free sleeves (added garment-finish constraint).
+- Verified end-to-end via curl: generate→generating→(real Gemini ~24s)→done with 622KB image. NOTE: REDEPLOY required for production.
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.

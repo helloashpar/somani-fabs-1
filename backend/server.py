@@ -416,16 +416,22 @@ async def delete_session(sid: str, user=Depends(get_current_user)):
 
 
 # ---------- Trials ----------
+async def _run_generation(tid, photo, garments):
+    try:
+        image = await gemini_service.generate_tryon(photo, garments)
+        await db.trials.update_one(
+            {"id": tid}, {"$set": {"generated_image": image, "status": "done"}})
+    except Exception as e:
+        logger.error(f"Gemini error (trial {tid}): {e}")
+        await db.trials.update_one(
+            {"id": tid}, {"$set": {"status": "failed", "error": str(e)[:200]}})
+
+
 @api.post("/sessions/{sid}/trials/generate")
 async def generate_trial(sid: str, body: GenerateIn, user=Depends(get_current_user)):
     s = await db.sessions.find_one({"id": sid})
     if not s:
         raise HTTPException(404, "Session not found")
-    try:
-        image = await gemini_service.generate_tryon(s["photo"], body.garments)
-    except Exception as e:
-        logger.error(f"Gemini error: {e}")
-        raise HTTPException(502, f"Image generation failed: {str(e)[:200]}")
     desc_parts = [f"{g.get('slot', '')}: {g.get('garment_type', '')}" for g in body.garments]
     description = " + ".join([d for d in desc_parts if d.strip(": ")])
     tid = new_id()
@@ -434,12 +440,25 @@ async def generate_trial(sid: str, body: GenerateIn, user=Depends(get_current_us
         "id": tid, "session_id": sid, "type": body.type,
         "garments": [{"slot": g.get("slot"), "garment_type": g.get("garment_type"),
                       "fabric_b64": g.get("fabric_b64")} for g in body.garments],
-        "fabric_thumb": fabric_thumb, "generated_image": image, "description": description,
+        "fabric_thumb": fabric_thumb, "generated_image": "", "description": description,
+        "status": "generating",
         "created_at": iso(), "expire_at": now_utc() + timedelta(days=7)}
     await db.trials.insert_one(doc)
+    # Generate in the background so the HTTP request returns immediately and
+    # never hits the Cloudflare/origin timeout. Client polls GET /trials/{tid}.
+    asyncio.create_task(_run_generation(tid, s["photo"], body.garments))
     await log_action(user, "generate_trial", f"Session {sid}: {description}")
     doc.pop("_id", None)
+    doc.pop("garments", None)
     return doc
+
+
+@api.get("/trials/{tid}")
+async def get_trial(tid: str, user=Depends(get_current_user)):
+    tr = await db.trials.find_one({"id": tid}, {"_id": 0, "garments.fabric_b64": 0})
+    if not tr:
+        raise HTTPException(404, "Trial not found")
+    return tr
 
 
 @api.delete("/trials/{tid}")

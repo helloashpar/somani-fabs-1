@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
@@ -16,8 +16,10 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
   const [garments, setGarments] = useState([]); // {slot, garment_type, fabric_b64}
   const [showCam, setShowCam] = useState(false);
   const [pendingFabric, setPendingFabric] = useState("");
+  const cancelled = useRef(false);
 
   useEffect(() => { api.get("/config/categories").then((r) => setCats(r.data)).catch(() => {}); }, []);
+  useEffect(() => () => { cancelled.current = true; }, []);
 
   const slots = cat?.slots || [];
   const curSlot = slots[slotIdx];
@@ -40,8 +42,20 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
     setStep("generating");
     try {
       const { data } = await api.post(`/sessions/${sessionId}/trials/generate`, { type: cat.label, garments: gs });
-      toast.success("Try-on ready");
-      onDone(data);
+      const tid = data.id;
+      const started = Date.now();
+      const poll = async () => {
+        if (cancelled.current) return;
+        try {
+          const { data: tr } = await api.get(`/trials/${tid}`);
+          if (cancelled.current) return;
+          if (tr.status === "done") { toast.success("Try-on ready"); onDone(tr); return; }
+          if (tr.status === "failed") { toast.error(tr.error || "Image generation failed"); setStep("slots"); return; }
+        } catch (e) { /* transient — keep polling */ }
+        if (Date.now() - started > 180000) { toast.error("Generation timed out. Please try again."); setStep("slots"); return; }
+        setTimeout(poll, 3000);
+      };
+      setTimeout(poll, 2500);
     } catch (e) {
       toast.error(apiErr(e));
       setStep("slots");

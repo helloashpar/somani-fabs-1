@@ -138,7 +138,7 @@ export default function SessionView({ sessionId, user, onBack }) {
         </button>
       )}
 
-      {showNewTrial && <NewTrial sessionId={sessionId} onClose={() => setShowNewTrial(false)} onDone={() => { setShowNewTrial(false); setPage(0); load(); }} />}
+      {showNewTrial && <NewTrial sessionId={sessionId} onClose={() => setShowNewTrial(false)} onDone={(newTrial) => { setShowNewTrial(false); setPage(0); load(); if (newTrial) setPreview(newTrial); }} />}
       {preview && <PreviewModal trial={preview} onClose={() => setPreview(null)} />}
       {showEnd && <EndSession onClose={() => setShowEnd(false)} onEnd={endSession} />}
     </div>
