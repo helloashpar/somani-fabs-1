@@ -59,6 +59,11 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - Config: backend/.env GEMINI_IMAGE_MODEL=gemini-3.1-flash-image, GEMINI_IMAGE_FALLBACK_MODEL=gemini-2.5-flash-image.
 - Verified: generate→7s→done with valid 634KB image, status poll = 28 bytes. NOTE: REDEPLOY required for production.
 
+## Endless-loading final fix (2026-06)
+- Real cause of the persistent endless spinner: after the tiny status poll detected done, NewTrial then fetched the FULL ~650KB trial INSIDE the same try/catch. On mobile that large fetch was slow/flaky → swallowed by catch → poll looped forever even though the image existed.
+- FIX: NewTrial poll now calls onDone(tid) IMMEDIATELY when status=done (no large fetch in the loop). SessionView.onDone(tid) closes the popup, reloads the session (single 650KB fetch it does anyway) and opens the preview for that tid. Popup closes the instant generation completes; preview opens right after.
+- Frontend compiles clean; backend status endpoint verified. Camera-based UI flow needs user verification in preview (device camera can't be automated).
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.

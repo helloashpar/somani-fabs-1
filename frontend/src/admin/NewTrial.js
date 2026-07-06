@@ -49,13 +49,7 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
         try {
           const { data: st } = await api.get(`/trials/${tid}/status`);
           if (cancelled.current) return;
-          if (st.status === "done") {
-            const { data: tr } = await api.get(`/trials/${tid}`);
-            if (cancelled.current) return;
-            toast.success("Try-on ready");
-            onDone(tr);
-            return;
-          }
+          if (st.status === "done") { toast.success("Try-on ready"); onDone(tid); return; }
           if (st.status === "failed") { toast.error(st.error || "Image generation failed"); setStep("slots"); return; }
         } catch (e) { /* transient — keep polling */ }
         if (Date.now() - started > 180000) { toast.error("Generation timed out. Please try again."); setStep("slots"); return; }

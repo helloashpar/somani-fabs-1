@@ -70,7 +70,7 @@ export default function SessionView({ sessionId, user, onBack }) {
   const [showEnd, setShowEnd] = useState(false);
   const [showCam, setShowCam] = useState(false);
 
-  const load = () => api.get(`/sessions/${sessionId}`).then((r) => { setSession(r.data); setTrials(r.data.trials || []); }).catch(() => {});
+  const load = () => api.get(`/sessions/${sessionId}`).then((r) => { setSession(r.data); setTrials(r.data.trials || []); return r.data; }).catch(() => null);
   useEffect(() => { load(); }, [sessionId]);
 
   const changePhoto = async (img) => {
@@ -148,7 +148,16 @@ export default function SessionView({ sessionId, user, onBack }) {
         </button>
       )}
 
-      {showNewTrial && <NewTrial sessionId={sessionId} onClose={() => setShowNewTrial(false)} onDone={(newTrial) => { setShowNewTrial(false); setPage(0); load(); if (newTrial) setPreview(newTrial); }} />}
+      {showNewTrial && <NewTrial sessionId={sessionId} onClose={() => setShowNewTrial(false)} onDone={(tid) => {
+        setShowNewTrial(false);
+        setPage(0);
+        load().then((data) => {
+          if (data && tid) {
+            const tr = (data.trials || []).find((x) => x.id === tid);
+            if (tr && tr.generated_image) setPreview(tr);
+          }
+        });
+      }} />}
       {preview && <PreviewModal trial={preview} onClose={() => setPreview(null)} />}
       {showEnd && <EndSession onClose={() => setShowEnd(false)} onEnd={endSession} />}
     </div>
