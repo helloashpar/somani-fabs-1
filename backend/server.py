@@ -453,6 +453,14 @@ async def generate_trial(sid: str, body: GenerateIn, user=Depends(get_current_us
     return doc
 
 
+@api.get("/trials/{tid}/status")
+async def get_trial_status(tid: str, user=Depends(get_current_user)):
+    tr = await db.trials.find_one({"id": tid}, {"_id": 0, "status": 1, "error": 1})
+    if not tr:
+        raise HTTPException(404, "Trial not found")
+    return {"status": tr.get("status", "generating"), "error": tr.get("error", "")}
+
+
 @api.get("/trials/{tid}")
 async def get_trial(tid: str, user=Depends(get_current_user)):
     tr = await db.trials.find_one({"id": tid}, {"_id": 0, "garments.fabric_b64": 0})

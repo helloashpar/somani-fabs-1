@@ -155,7 +155,7 @@ def _generate_sync(person_b64, garments):
 _RETRYABLE_TOKENS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED",
                      "500", "INTERNAL", "overloaded", "high demand",
                      "No image returned")
-_BACKOFF = [3, 6]
+_BACKOFF = [2, 4]
 
 
 async def generate_tryon(person_b64, garments):

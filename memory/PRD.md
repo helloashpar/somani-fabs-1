@@ -53,6 +53,12 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - FIX 2 (SessionView.js): guards the try-on <img> — empty image now shows a clean placeholder (spinner while generating, red "!" + Remove button when failed) instead of a broken icon. New i18n keys gen_failed/remove (Hinglish/English/Hindi).
 - Verified: generation now returns done with valid ~659KB image after the fallback logic. NOTE: REDEPLOY required for production.
 
+## Smoothness + Speed + Cost (2026-06)
+- SMOOTHNESS (fake endless loading): the frontend was polling GET /trials/{tid} which returns the FULL ~650KB image every 2.5s — on staging this large response intermittently failed, so the poll never saw status=done → endless spinner even though the image was generated. FIX: new lightweight GET /trials/{tid}/status (~28 bytes, status+error only). NewTrial.js polls the status endpoint; on done it fetches the full trial ONCE then onDone(). Reliable detection, no fake loading.
+- SPEED + COST: switched PRIMARY model to gemini-3.1-flash-image (Nano Banana 2 — "second best", much faster & cheaper) with gemini-2.5-flash-image fallback. Pro model (gemini-3-pro-image) no longer used by default. Generation time dropped from ~24s+ to ~7s in testing. Retry backoff shortened to [2,4].
+- Config: backend/.env GEMINI_IMAGE_MODEL=gemini-3.1-flash-image, GEMINI_IMAGE_FALLBACK_MODEL=gemini-2.5-flash-image.
+- Verified: generate→7s→done with valid 634KB image, status poll = 28 bytes. NOTE: REDEPLOY required for production.
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.
