@@ -64,6 +64,11 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - FIX: NewTrial poll now calls onDone(tid) IMMEDIATELY when status=done (no large fetch in the loop). SessionView.onDone(tid) closes the popup, reloads the session (single 650KB fetch it does anyway) and opens the preview for that tid. Popup closes the instant generation completes; preview opens right after.
 - Frontend compiles clean; backend status endpoint verified. Camera-based UI flow needs user verification in preview (device camera can't be automated).
 
+## THE actual endless-loading root cause — StrictMode ref bug (2026-06)
+- Root cause: NewTrial used `const cancelled = useRef(false)` with `useEffect(() => () => { cancelled.current = true }, [])`. React 18 StrictMode (enabled in index.js) runs mount→setup→cleanup→setup in dev/preview; the cleanup set cancelled.current=true and the re-run setup never reset it, so cancelled.current stayed TRUE. The poll's first line `if (cancelled.current) return` then killed all polling immediately. Image still generated in the background task (so it appeared in the list) but the popup never detected done → endless spinner. This affected preview (StrictMode dev); production build may differ but the fix is correct regardless.
+- FIX: reset cancelled.current=false in the effect setup (`useEffect(() => { cancelled.current=false; return () => { cancelled.current=true }; }, [])`) AND at the start of generate(). Polling now runs and detects done reliably.
+- Compiles clean. Needs user verification in preview (camera flow can't be automated).
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.

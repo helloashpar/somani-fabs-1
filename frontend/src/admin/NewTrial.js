@@ -19,7 +19,7 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
   const cancelled = useRef(false);
 
   useEffect(() => { api.get("/config/categories").then((r) => setCats(r.data)).catch(() => {}); }, []);
-  useEffect(() => () => { cancelled.current = true; }, []);
+  useEffect(() => { cancelled.current = false; return () => { cancelled.current = true; }; }, []);
 
   const slots = cat?.slots || [];
   const curSlot = slots[slotIdx];
@@ -39,6 +39,7 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
   };
 
   const generate = async (gs) => {
+    cancelled.current = false;
     setStep("generating");
     try {
       const { data } = await api.post(`/sessions/${sessionId}/trials/generate`, { type: cat.label, garments: gs });
