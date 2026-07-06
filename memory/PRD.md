@@ -47,6 +47,12 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - Gemini prompt (gemini_service.py) updated: garments must be crisply ironed, completely wrinkle-free, well-fitted, with smooth crease-free sleeves (added garment-finish constraint).
 - Verified end-to-end via curl: generate→generating→(real Gemini ~24s)→done with 622KB image. NOTE: REDEPLOY required for production.
 
+## Broken Generated Image Fix — Gemini 503 + fallback (2026-06)
+- ROOT CAUSE of "generated photo not loading" (broken thumbnails): the primary image model `gemini-3-pro-image` (Nano Banana Pro) intermittently returns 503 UNAVAILABLE ("high demand"). Failed generation left trials with status=failed + empty generated_image → broken <img>.
+- FIX 1 (gemini_service.py): retry-with-backoff (3 attempts, 3s/6s) on transient errors (503/429/500/UNAVAILABLE/RESOURCE_EXHAUSTED/no-image), then AUTOMATIC FALLBACK to `gemini-3.1-flash-image` (Nano Banana 2 — faster, more available, still 4K). Env: GEMINI_IMAGE_MODEL (primary), GEMINI_IMAGE_FALLBACK_MODEL (default gemini-3.1-flash-image). Confirmed current 2026 model IDs; `-preview` variants deprecated.
+- FIX 2 (SessionView.js): guards the try-on <img> — empty image now shows a clean placeholder (spinner while generating, red "!" + Remove button when failed) instead of a broken icon. New i18n keys gen_failed/remove (Hinglish/English/Hindi).
+- Verified: generation now returns done with valid ~659KB image after the fallback logic. NOTE: REDEPLOY required for production.
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.

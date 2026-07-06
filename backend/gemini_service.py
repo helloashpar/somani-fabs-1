@@ -1,6 +1,7 @@
 import os
 import base64
 import io
+import time
 import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
@@ -10,7 +11,8 @@ from google import genai
 from google.genai import types
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
-MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image-preview")
+MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3-pro-image")
+FALLBACK_MODEL = os.environ.get("GEMINI_IMAGE_FALLBACK_MODEL", "gemini-3.1-flash-image")
 
 _client = None
 
@@ -98,19 +100,7 @@ BACKGROUND: Place the customer against {bg}. Soft, even, professional studio lig
 OUTPUT: One clean, sharp, high-resolution try-on photograph only."""
 
 
-def _generate_sync(person_b64, garments):
-    """garments: list of {slot, garment_type, fabric_b64}"""
-    fabrics = [g["fabric_b64"] for g in garments]
-    light = fabric_is_light(fabrics)
-    prompt = _build_prompt(garments, light)
-
-    contents = [prompt, _part(person_b64)]
-    for g in garments:
-        contents.append(_part(g["fabric_b64"]))
-
-    client = get_client()
-    resp = client.models.generate_content(model=MODEL, contents=contents)
-
+def _extract_image(resp):
     for cand in resp.candidates or []:
         if not cand.content or not cand.content.parts:
             continue
@@ -123,7 +113,49 @@ def _generate_sync(person_b64, garments):
                 else:
                     out = base64.b64encode(data).decode("utf-8")
                 return f"data:image/png;base64,{out}"
-    raise RuntimeError("No image returned from Gemini")
+    return None
+
+
+def _generate_sync(person_b64, garments):
+    """garments: list of {slot, garment_type, fabric_b64}"""
+    fabrics = [g["fabric_b64"] for g in garments]
+    light = fabric_is_light(fabrics)
+    prompt = _build_prompt(garments, light)
+
+    contents = [prompt, _part(person_b64)]
+    for g in garments:
+        contents.append(_part(g["fabric_b64"]))
+
+    client = get_client()
+    models_to_try = [MODEL]
+    if FALLBACK_MODEL and FALLBACK_MODEL != MODEL:
+        models_to_try.append(FALLBACK_MODEL)
+
+    last_err = None
+    # The Pro image model can return 503 (high demand) / 429 / 500. Retry with
+    # backoff, then fall back to the faster Flash image model so an image is
+    # always produced instead of failing the try-on.
+    for model in models_to_try:
+        for attempt in range(3):
+            try:
+                resp = client.models.generate_content(model=model, contents=contents)
+                img = _extract_image(resp)
+                if img:
+                    return img
+                last_err = RuntimeError("No image returned from Gemini")
+            except Exception as e:
+                last_err = e
+                if not any(k in str(e) for k in _RETRYABLE_TOKENS):
+                    raise
+            if attempt < 2:
+                time.sleep(_BACKOFF[attempt])
+    raise last_err
+
+
+_RETRYABLE_TOKENS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED",
+                     "500", "INTERNAL", "overloaded", "high demand",
+                     "No image returned")
+_BACKOFF = [3, 6]
 
 
 async def generate_tryon(person_b64, garments):

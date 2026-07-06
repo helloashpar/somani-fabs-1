@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { X, Eye, Plus, ImageIcon, RefreshCw, CheckCircle2 } from "lucide-react";
+import { X, Eye, Plus, ImageIcon, RefreshCw, CheckCircle2, Loader2 } from "lucide-react";
 import Camera from "@/admin/Camera";
 import NewTrial from "@/admin/NewTrial";
 
@@ -113,12 +113,22 @@ export default function SessionView({ sessionId, user, onBack }) {
         {visible.map((tr) => (
           <div data-testid={`trial-row-${tr.id}`} key={tr.id} className="flex items-center gap-3 p-3">
             <img src={tr.fabric_thumb} alt="fabric" className="w-12 h-12 object-cover rounded-md border shrink-0" />
-            <img src={tr.generated_image} alt="tryon" className="w-12 h-14 object-cover rounded-md border shrink-0" />
+            {tr.generated_image ? (
+              <img src={tr.generated_image} alt="tryon" className="w-12 h-14 object-cover rounded-md border shrink-0" />
+            ) : (
+              <div className="w-12 h-14 rounded-md border shrink-0 flex items-center justify-center bg-gray-50">
+                {tr.status === "failed"
+                  ? <span data-testid={`trial-failed-${tr.id}`} className="text-red-500 text-xl font-bold">!</span>
+                  : <Loader2 className="animate-spin text-gray-400" size={16} />}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{tr.type}</p>
-              <p className="text-xs text-gray-500 truncate">{tr.description}</p>
+              <p className="text-xs text-gray-500 truncate">{tr.status === "failed" ? t("gen_failed") : tr.description}</p>
             </div>
-            <button data-testid={`view-trial-${tr.id}`} onClick={() => setPreview(tr)} className="flex items-center gap-1 text-sm text-[#1E3A8A] border border-[#1E3A8A]/30 rounded-lg px-3 py-1.5"><Eye size={15} /> {t("view")}</button>
+            {tr.generated_image
+              ? <button data-testid={`view-trial-${tr.id}`} onClick={() => setPreview(tr)} className="flex items-center gap-1 text-sm text-[#1E3A8A] border border-[#1E3A8A]/30 rounded-lg px-3 py-1.5"><Eye size={15} /> {t("view")}</button>
+              : <button data-testid={`retry-trial-${tr.id}`} onClick={async () => { await api.delete(`/trials/${tr.id}`).catch(() => {}); load(); }} className="text-sm text-gray-500 border border-gray-300 rounded-lg px-3 py-1.5">{t("remove")}</button>}
           </div>
         ))}
       </div>
