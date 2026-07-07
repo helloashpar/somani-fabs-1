@@ -69,6 +69,12 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 - FIX: reset cancelled.current=false in the effect setup (`useEffect(() => { cancelled.current=false; return () => { cancelled.current=true }; }, [])`) AND at the start of generate(). Polling now runs and detects done reliably.
 - Compiles clean. Needs user verification in preview (camera flow can't be automated).
 
+## Deployment failure fix (build + become-ready) (2026-07)
+- Production redeploy was failing two ways: (1) Cloud Build failed, (2) deployment failed to become ready (readiness timeout).
+- CAUSE 1 (build): Cloud Build runs with CI=true which treats CRA/craco ESLint warnings as ERRORS. Two react-hooks/exhaustive-deps warnings (SessionView.js useEffect load, Settings.js useEffect load) failed the build. FIX: added `// eslint-disable-next-line react-hooks/exhaustive-deps` above both. Verified `CI=true yarn build` now exits 0 clean.
+- CAUSE 2 (become-ready): the /health endpoint (added earlier per user request) does `await client.admin.command("ping")`; with serverSelectionTimeoutMS=30000 it could hang up to 30s per readiness probe if Mongo slow at startup → K8s readiness timeout. FIX: wrapped ping in asyncio.wait_for(..., timeout=2.0) so /health responds fast (200 if reachable, 503 if not) and the probe retries cleanly. Verified /health returns 200 in ~4ms.
+- Speed note: production (yesterday's build) was slow today likely due to upstream Gemini high-demand or old model config; a successful redeploy of current code (flash primary) makes prod match preview. REDEPLOY required.
+
 ## Backlog / Next
 - P1: Headless-testable path for camera flows (file-upload fallback) and frontend E2E verification of session→trial→preview→display in a real browser with camera.
 - P2: Hide display_secret from non-super admins; wrap raw Dict request bodies in Pydantic; resize fabric_thumb to true thumbnail to shrink docs.

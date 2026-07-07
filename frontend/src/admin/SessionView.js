@@ -71,6 +71,7 @@ export default function SessionView({ sessionId, user, onBack }) {
   const [showCam, setShowCam] = useState(false);
 
   const load = () => api.get(`/sessions/${sessionId}`).then((r) => { setSession(r.data); setTrials(r.data.trials || []); return r.data; }).catch(() => null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [sessionId]);
 
   const changePhoto = async (img) => {

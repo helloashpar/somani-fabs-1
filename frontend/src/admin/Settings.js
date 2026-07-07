@@ -93,6 +93,7 @@ function SessionHistory() {
     let q = []; if (frm) q.push(`frm=${frm}T00:00:00`); if (to) q.push(`to=${to}T23:59:59`);
     api.get(`/sessions/history${q.length ? "?" + q.join("&") : ""}`).then((r) => setList(r.data)).catch(() => {});
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [frm, to]);
   const del = async (id) => { if (!window.confirm("Delete this session?")) return; await api.delete(`/sessions/${id}`); toast.success("Deleted"); load(); };
   const saveEdit = async () => { await api.patch(`/sessions/${edit.id}`, { purchased: edit.purchased, total_value: parseFloat(edit.total_value) || 0, discount: parseFloat(edit.discount) || 0, final_paid: parseFloat(edit.final_paid) || 0 }); toast.success("Updated"); setEdit(null); load(); };

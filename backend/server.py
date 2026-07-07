@@ -651,7 +651,7 @@ async def root():
 @app.get("/health")
 async def health():
     try:
-        await client.admin.command("ping")
+        await asyncio.wait_for(client.admin.command("ping"), timeout=2.0)
     except Exception as e:
         logger.error(f"Health check DB ping failed: {e}")
         raise HTTPException(503, "Database unavailable")
