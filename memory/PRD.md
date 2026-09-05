@@ -83,3 +83,11 @@ Unstitched fabric shop "Somani Fabs - Shivnarayan Shivbhagwan Somani" (Kuchaman 
 ## Notes
 - Gemini model: gemini-3-pro-image (best quality, ~10-25s per generation). Key in backend/.env (user-provided).
 - NOT auto-verified: in-browser camera capture UI and full try-on UI flow (requires device camera; backend APIs fully verified).
+
+## Self-hosting migration to DigitalOcean droplet (2026-06)
+- User wants full independence from Emergent: own GitHub repo -> auto-deploy to own droplet. Choices: MongoDB Atlas, existing droplet, test on plain IP first then move somanifabs.com, GitHub Actions auto-deploy on push to main, Let's Encrypt HTTPS.
+- Added (no app logic changed): backend/Dockerfile + backend/requirements.prod.txt (Emergent-only pkgs emergentintegrations/litellm and dev/test tools excluded; adds google-genai, pillow, openpyxl which were missing from requirements.txt), backend/.dockerignore, frontend/Dockerfile (node build -> nginx static, strips @emergentbase/visual-edits, CI=false, ARG REACT_APP_BACKEND_URL=""), frontend/nginx.conf (SPA fallback), frontend/.dockerignore (excludes .env so preview URL never leaks into prod build), docker-compose.yml (backend 127.0.0.1:8001, frontend 127.0.0.1:3000, env_file ./.env, healthcheck), deploy/setup-droplet.sh (docker+nginx+certbot+ufw+2GB swap), deploy/nginx-site.conf (host nginx: /api + /health -> 8001, / -> 3000, client_max_body_size 60M, 300s proxy timeouts), deploy/deploy.sh (git reset --hard origin/main + build + up -d + health wait), deploy/env.example, .github/workflows/deploy.yml (appleboy/ssh-action, secrets DROPLET_HOST/DROPLET_USER/DROPLET_SSH_KEY).
+- MIGRATION-GUIDE.md at repo root: 9 beginner steps (GitHub -> Atlas -> droplet setup -> .env -> first launch on IP -> GitHub Actions -> DNS + certbot HTTPS -> daily push workflow -> commands/troubleshooting/backups).
+- Verified in preview: `REACT_APP_BACKEND_URL="" craco build` exits 0 and compiles API base to "/api" (same-origin, works on IP and domain). Docker not available in preview pod, so image builds are unverified until the user runs them on the droplet.
+- User must supply their OWN Gemini API key (aistudio.google.com/apikey) on the droplet; the Emergent universal key won't work off-platform.
+- Old prod data lives in Emergent's DB; Atlas starts empty (admin + categories auto-seed).
