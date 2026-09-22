@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useLang, LANGS } from "@/i18n";
-import { Globe, Phone, MapPin, ArrowRight, Scissors, Shirt, Layers, Sparkles } from "lucide-react";
+import { Globe, Phone, MapPin, ArrowRight, ChevronLeft, ChevronRight, Scissors, Shirt, Layers, Sparkles } from "lucide-react";
 
-const SHOP = "https://customer-assets.emergentagent.com/job_5cab469b-a854-4b1a-a54f-4b9839c20fae/artifacts/f1xaaed3_WhatsApp%20Image%202026-06-26%20at%202.47.57%20PM.jpeg";
+// Hero catalog carousel — one slide per category we stock. Labels reuse the
+// existing sell_* strings so all three languages stay in sync.
+const CATALOG = [
+  { k: "sell_1", src: "https://images.pexels.com/photos/6766360/pexels-photo-6766360.jpeg?auto=compress&cs=tinysrgb&w=1600", alt: "Folded premium suiting fabrics" },
+  { k: "sell_2", src: "https://images.pexels.com/photos/17329670/pexels-photo-17329670.jpeg?auto=compress&cs=tinysrgb&w=1600", alt: "Shirting fabric rolls on display" },
+  { k: "sell_3", src: "https://images.unsplash.com/photo-1660845683010-63e7422420b9?crop=entropy&cs=srgb&fm=jpg&q=85&w=1600", alt: "Traditional Indian cotton textile" },
+  { k: "sell_4", src: "https://images.pexels.com/photos/4566670/pexels-photo-4566670.jpeg?auto=compress&cs=tinysrgb&w=1600", alt: "Colourful festive apparel fabrics" },
+];
+const SLIDE_MS = 5000;
 const FAB1 = "https://images.unsplash.com/photo-1660845683010-63e7422420b9?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200";
 const ROLL = "https://images.pexels.com/photos/6766360/pexels-photo-6766360.jpeg?auto=compress&cs=tinysrgb&w=1200";
 
@@ -26,6 +34,56 @@ function LangToggle() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function HeroCarousel() {
+  const { t } = useLang();
+  const [idx, setIdx] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const go = (n) => setIdx((n + CATALOG.length) % CATALOG.length);
+
+  useEffect(() => {
+    if (paused) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const id = setInterval(() => setIdx((c) => (c + 1) % CATALOG.length), SLIDE_MS);
+    return () => clearInterval(id);
+  }, [paused, idx]);
+
+  return (
+    <div data-testid="hero-carousel" className="absolute inset-0"
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
+      {CATALOG.map((s, n) => (
+        <img key={s.k} src={s.src} alt={s.alt} aria-hidden={n !== idx}
+          loading={n === 0 ? "eager" : "lazy"}
+          className={`absolute inset-0 w-full h-full object-cover transition-all ease-out [transition-duration:1400ms] ${n === idx ? "opacity-100 scale-100" : "opacity-0 scale-105"}`} />
+      ))}
+      <div className="absolute inset-0 hero-overlay" />
+
+      {/* Controls sit above the hero copy; the wrapper stays click-through. */}
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        <button data-testid="hero-prev-btn" aria-label="Previous fabric" onClick={() => go(idx - 1)}
+          className="pointer-events-auto absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 h-11 w-11 grid place-items-center rounded-full border border-white/40 bg-black/25 text-white backdrop-blur-sm hover:bg-black/45 transition-colors">
+          <ChevronLeft size={20} />
+        </button>
+        <button data-testid="hero-next-btn" aria-label="Next fabric" onClick={() => go(idx + 1)}
+          className="pointer-events-auto absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 h-11 w-11 grid place-items-center rounded-full border border-white/40 bg-black/25 text-white backdrop-blur-sm hover:bg-black/45 transition-colors">
+          <ChevronRight size={20} />
+        </button>
+
+        <div className="pointer-events-auto absolute right-5 sm:right-8 bottom-8 flex items-center gap-4">
+          <span className="hidden sm:block text-white/85 text-xs tracking-[0.25em] uppercase">{t(CATALOG[idx].k)}</span>
+          <div className="flex items-center gap-2">
+            {CATALOG.map((s, n) => (
+              <button key={s.k} data-testid={`hero-dot-${n}`} aria-label={t(s.k)} aria-current={n === idx}
+                onClick={() => go(n)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${n === idx ? "w-7 bg-[#E9C46A]" : "w-3 bg-white/50 hover:bg-white/80"}`} />
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -58,8 +116,7 @@ export default function Landing() {
 
       {/* Hero */}
       <section className="relative h-[88vh] min-h-[560px] w-full overflow-hidden">
-        <img src={SHOP} alt="Somani Fabs storefront" className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0 hero-overlay" />
+        <HeroCarousel />
         <div className="relative z-10 h-full max-w-6xl mx-auto px-5 flex flex-col justify-end pb-20">
           <p className="fade-up text-[#E9C46A] text-xs sm:text-sm tracking-[0.25em] uppercase mb-4">{t("hero_tag")}</p>
           <h1 className="fade-up font-display font-black text-white text-5xl sm:text-6xl lg:text-7xl leading-[0.95] tracking-tight">{t("hero_title")}</h1>
