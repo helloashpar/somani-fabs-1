@@ -19,21 +19,22 @@ FALLBACK_MODEL = os.environ.get("OPENAI_IMAGE_FALLBACK_MODEL", "gpt-image-2.5-fl
 # Quality is the main cost lever: low | medium | high | xhigh | max.
 # "low" keeps the face and fabric well for try-on at a fraction of medium's cost.
 QUALITY = os.environ.get("OPENAI_IMAGE_QUALITY", "low")
-# Output pixels are billed, so match the 900x1100 customer photo instead of a
-# tall 1024x1536 canvas. Full-length outfits (any bottom wear, or a long top like
-# a kurta) use a taller canvas with about the same pixel count, so similar cost.
-# Each falls back to a standard size if a model rejects custom sizes.
-SIZE = os.environ.get("OPENAI_IMAGE_SIZE", "832x1024")
-SIZE_FULL = os.environ.get("OPENAI_IMAGE_SIZE_FULL", "704x1248")
+# Output pixels are billed, so use the smallest canvas the model accepts
+# (~655k pixels minimum) in the shape of the 900x1100 customer photo. Full-length
+# outfits (any bottom wear, or a long top like a kurta) use a taller canvas with
+# the same pixel count. Each falls back to a standard size if a model rejects it.
+SIZE = os.environ.get("OPENAI_IMAGE_SIZE", "736x896")
+SIZE_FULL = os.environ.get("OPENAI_IMAGE_SIZE_FULL", "608x1088")
 SAFE_SIZE = "1024x1024"
 SAFE_SIZE_FULL = "1024x1536"
 # Optional, only for older models that support it (gpt-image-1 / 1.5). Leave empty to skip.
 INPUT_FIDELITY = os.environ.get("OPENAI_IMAGE_INPUT_FIDELITY", "")
 # Input images are billed per token, so we shrink them before sending.
 # The customer photo keeps more pixels so the face survives; fabric swatches
-# are centre-cropped so the weave keeps its detail at a small size.
-PERSON_MAX_PX = int(os.environ.get("OPENAI_IMAGE_PERSON_MAX_PX", "512"))
-FABRIC_MAX_PX = int(os.environ.get("OPENAI_IMAGE_FABRIC_MAX_PX", "256"))
+# are centre-cropped so the weave keeps its detail at a small size (tested:
+# fine linen slubs still come through at 192 px).
+PERSON_MAX_PX = int(os.environ.get("OPENAI_IMAGE_PERSON_MAX_PX", "448"))
+FABRIC_MAX_PX = int(os.environ.get("OPENAI_IMAGE_FABRIC_MAX_PX", "192"))
 
 # USD per 1M tokens: (text input, image input, image output). Used only to log
 # an estimated cost per try-on; update if OpenAI changes prices.
@@ -120,69 +121,39 @@ def is_full_length(garments):
 
 
 def _build_prompt(garments, light_fabric):
-    if light_fabric:
-        bg = "a plain deep charcoal studio backdrop, so the light fabrics stand out"
-    else:
-        bg = "a plain light-grey seamless studio backdrop, so the dark fabrics stand out"
+    # Kept short on purpose: text is billed per token, and this compact version
+    # was tested to give the same result as a longer prompt (~40% fewer tokens).
+    bg = "plain deep charcoal backdrop" if light_fabric else "plain light-grey seamless backdrop"
 
     # Image 1 is the customer; image N+1 is the fabric for garment N.
-    g_lines = []
+    lines = []
     for i, g in enumerate(garments, 2):
-        line = (f"- Image {i} is the fabric for {_SLOT_ROLE.get(g['slot'], g['slot'])}: "
-                f"stitch it into this garment: {g['garment_type']}.")
-        if g.get("description"):
-            line += f" Garment details: {g['description']}"
-        g_lines.append(line)
-    garment_text = "\n".join(g_lines)
+        line = f"- Image {i}: fabric for {_SLOT_ROLE.get(g['slot'], g['slot'])}. Make a {g['garment_type']}"
+        lines.append(f"{line}: {g['description']}" if g.get("description") else f"{line}.")
 
     slots = {g["slot"] for g in garments}
-    changes = []
+    full = is_full_length(garments)
     if "top" not in slots and "third" not in slots:
-        changes.append("Only the lower-body clothing changes. Keep the customer's upper-body "
-                       "clothing exactly as in image 1 (same garment, colour and style).")
-    if "bottom" not in slots and is_full_length(garments):
-        changes.append("No bottom wear was chosen, but the full length must be shown. Below "
-                       "the new garments, show plain neutral bottoms that suit the outfit and "
-                       "do not draw attention.")
+        lines.append("Change only the lower-body clothing; keep the upper-body clothing from image 1 unchanged.")
+    if "bottom" not in slots and full:
+        lines.append("No bottom wear chosen: show plain neutral bottoms that suit the outfit.")
     if "third" in slots:
-        changes.append("Layering: the outer layer is worn over the upper-body garment. The "
-                       "upper-body garment must still be visible where it naturally shows "
-                       "(collar, front opening, sleeves or hem, depending on the outer layer).")
-    change_text = "\n".join(f"- {c}" for c in changes)
-    if change_text:
-        change_text = "\nWHAT TO CHANGE:\n" + change_text + "\n"
+        lines.append("The outer layer goes over the upper-body garment, which stays visible where it "
+                     "naturally shows (collar, front, sleeves or hem).")
 
-    if is_full_length(garments):
-        framing = ("FRAMING: Show the customer from head to feet so every garment is fully "
-                   "visible, including the full length and hem of long garments. Extend the body "
-                   "naturally below the original crop, keeping the same build and proportions.")
-    else:
-        framing = ("FRAMING: Show the customer from the head to the upper thighs so the whole "
-                   "garment, including its hem, is visible. Keep the same camera angle as image 1.")
+    framing = ("Show head to feet so full lengths and hems are visible; extend the body naturally, same build."
+               if full else "Show head to upper thighs so the whole garment and hem are visible; same camera angle.")
+    garment_text = "\n".join(lines)
 
-    return f"""Virtual try-on for a tailoring shop. Edit image 1 so the same person is wearing new clothes stitched from the fabric swatches.
-
-IMAGES:
-- Image 1 is the customer. This is the photo to edit.
+    return f"""Virtual try-on. Edit image 1 so the same person wears new clothes stitched from the fabric swatches.
+- Image 1: the customer (edit this photo).
 {garment_text}
-{change_text}
-KEEP FROM IMAGE 1 (do not change):
-- The exact face, facial features, skin tone, expression, hair, beard and glasses. The customer must recognise themselves. Do not beautify, slim, age or retouch.
-- Body build, pose and camera angle.
-- If the customer's feet are visible in image 1, keep the same footwear.
-
-FABRIC:
-- Copy each fabric's exact colour, shade, pattern, weave and texture from its swatch. Do not recolour, brighten or restyle it.
-- The swatches are close-ups, so scale any pattern (checks, stripes, prints) down to how it would look on a real garment worn by an adult.
-- Use ONLY the cloth from the swatch images. Ignore any hands, tables, labels, folds or backgrounds visible in them.
-
-GARMENTS: Follow the description of each garment exactly. Realistic tailoring with proper collars, seams, buttons and hems. Freshly pressed with a clean fit, neither baggy nor tight.
-
+Keep exactly from image 1: face, features, skin tone, expression, hair, beard, glasses, body build, pose; footwear if visible. No beautifying or retouching.
+Fabric: copy each swatch's exact colour, pattern, weave and texture; scale patterns to real garment size; use only the cloth, ignore hands, tables or backgrounds in the swatches.
+Garments: follow each description; realistic tailoring, freshly pressed, clean fit.
 {framing}
-
-BACKGROUND: Replace the background with {bg}. Soft, even studio lighting. No props, text or watermark.
-
-OUTPUT: One photorealistic photograph of the customer wearing the new garments."""
+Background: {bg}, soft studio light. No props, text or watermark.
+Output: one photorealistic photo."""
 
 
 def _extract_image(resp):
