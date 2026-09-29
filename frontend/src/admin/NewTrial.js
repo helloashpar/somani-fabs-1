@@ -28,14 +28,23 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
 
   const confirmGarment = (gtype) => {
     if (!pendingFabric) { toast.error(t("fabric_photo")); return; }
-    const next = [...garments, { slot: curSlot, garment_type: gtype, fabric_b64: pendingFabric }];
+    // Replace this slot's entry (never append): after a failed attempt staff
+    // re-confirm the last slot, and appending would send duplicate garments.
+    const next = [...garments.slice(0, slotIdx), { slot: curSlot, garment_type: gtype, fabric_b64: pendingFabric }];
     setGarments(next);
-    setPendingFabric("");
     if (slotIdx + 1 < slots.length) {
+      setPendingFabric("");
       setSlotIdx(slotIdx + 1);
     } else {
       generate(next);
     }
+  };
+
+  // Back on the last slot after a failure: keep its fabric photo so staff can
+  // simply tap a garment type again to retry.
+  const backToLastSlot = (gs) => {
+    setPendingFabric(gs[gs.length - 1]?.fabric_b64 || "");
+    setStep("slots");
   };
 
   const generate = async (gs) => {
@@ -44,6 +53,7 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
     try {
       const { data } = await api.post(`/sessions/${sessionId}/trials/generate`, { type: cat.label, garments: gs });
       const tid = data.id;
+      if (data.status === "done") { toast.success("Try-on ready"); onDone(tid); return; }
       const started = Date.now();
       const poll = async () => {
         if (cancelled.current) return;
@@ -51,19 +61,24 @@ export default function NewTrial({ sessionId, onClose, onDone }) {
           const { data: st } = await api.get(`/trials/${tid}/status`);
           if (cancelled.current) return;
           if (st.status === "done") { toast.success("Try-on ready"); onDone(tid); return; }
-          if (st.status === "failed") { toast.error(st.error || "Image generation failed"); setStep("slots"); return; }
+          if (st.status === "failed") { toast.error(st.error || "Image generation failed"); backToLastSlot(gs); return; }
         } catch (e) { /* transient — keep polling */ }
-        if (Date.now() - started > 180000) { toast.error("Generation timed out. Please try again."); setStep("slots"); return; }
+        if (Date.now() - started > 180000) {
+          // Keep the trial: it may still finish and will show in the session list.
+          toast.error("This is taking longer than usual. It will appear in the list when ready.");
+          onDone(null);
+          return;
+        }
         setTimeout(poll, 2500);
       };
       setTimeout(poll, 2000);
     } catch (e) {
       toast.error(apiErr(e));
-      setStep("slots");
+      backToLastSlot(gs);
     }
   };
 
-  if (showCam) return <Camera onCapture={(img) => { setPendingFabric(img); setShowCam(false); }} onClose={() => setShowCam(false)} />;
+  if (showCam) return <Camera mode="fabric" onCapture={(img) => { setPendingFabric(img); setShowCam(false); }} onClose={() => setShowCam(false)} />;
 
   return (
     <div className="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center" onClick={step === "generating" ? undefined : onClose}>

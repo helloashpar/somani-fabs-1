@@ -10,6 +10,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// An expired or revoked login makes every call fail with 401. Send staff back
+// to the login screen instead of leaving buttons that silently do nothing.
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err?.response?.status;
+    const isLogin = (err?.config?.url || "").includes("/auth/login");
+    if (status === 401 && !isLogin && localStorage.getItem("sf_token")) {
+      localStorage.removeItem("sf_token");
+      window.location.assign("/admin");
+    }
+    return Promise.reject(err);
+  },
+);
+
 export function setToken(t) { localStorage.setItem("sf_token", t); }
 export function clearToken() { localStorage.removeItem("sf_token"); }
 export function getToken() { return localStorage.getItem("sf_token"); }
