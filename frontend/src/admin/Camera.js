@@ -1,128 +1,145 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLang } from "@/i18n";
-import { Camera as CamIcon, RotateCcw, Check, X } from "lucide-react";
+import { RotateCcw, Check, X, Upload, SwitchCamera } from "lucide-react";
 
-// Reusable full-screen camera capture with framing guide + readiness check.
-export default function Camera({ onCapture, onClose }) {
+// Output sizes. The viewfinder has the same shape as the output, so what staff
+// see is exactly what gets saved.
+const MODES = {
+  person: { w: 900, h: 1100 }, // customer photo: plain portrait
+  fabric: { w: 800, h: 800 },  // fabric swatch: square
+};
+
+// Centre-crop an image or video frame to the mode's output shape.
+function crop(source, sw, sh, { w, h }) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ratio = w / h;
+  let cw = sw, ch = sw / ratio;
+  if (ch > sh) { ch = sh; cw = sh * ratio; }
+  c.getContext("2d").drawImage(source, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, w, h);
+  return c.toDataURL("image/jpeg", 0.92);
+}
+
+// Full-screen camera. mode="person" is a normal photo; mode="fabric" shows a
+// square guide. No checks or warnings: staff can always take the photo.
+export default function Camera({ onCapture, onClose, mode = "person" }) {
   const { t } = useLang();
+  const size = MODES[mode] || MODES.person;
   const videoRef = useRef(null);
-  const analyzeRef = useRef(null);
+  const fileRef = useRef(null);
+  const [facing, setFacing] = useState("environment");
   const [stream, setStream] = useState(null);
-  const [ready, setReady] = useState(false);
-  const [hint, setHint] = useState("");
   const [shot, setShot] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    let s;
-    (async () => {
-      try {
-        s = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 1280 } },
-          audio: false,
-        });
-        setStream(s);
-        if (videoRef.current) videoRef.current.srcObject = s;
-      } catch (e) {
-        setErr("Camera access denied. Please allow camera permission.");
-      }
-    })();
-    return () => { if (s) s.getTracks().forEach((tr) => tr.stop()); };
-  }, []);
+    let s, alive = true;
+    setErr("");
+    navigator.mediaDevices?.getUserMedia({
+      video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false,
+    }).then((st) => {
+      if (!alive) { st.getTracks().forEach((tr) => tr.stop()); return; }
+      s = st; setStream(st);
+    }).catch(() => alive && setErr(t("cam_unavailable")));
+    return () => { alive = false; if (s) s.getTracks().forEach((tr) => tr.stop()); };
+  }, [facing, t]);
 
-  // readiness analysis loop
+  // The <video> is re-created after "Retake", so re-attach the stream.
   useEffect(() => {
-    if (shot) return;
-    const id = setInterval(() => {
-      const v = videoRef.current;
-      const c = analyzeRef.current;
-      if (!v || !c || v.videoWidth === 0) return;
-      const w = 64, h = 64;
-      c.width = w; c.height = h;
-      const ctx = c.getContext("2d");
-      ctx.drawImage(v, 0, 0, w, h);
-      const d = ctx.getImageData(0, 0, w, h).data;
-      let sum = 0, sumSq = 0, edge = 0, prev = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-        sum += lum; sumSq += lum * lum;
-        if (i > 0) edge += Math.abs(lum - prev);
-        prev = lum;
-      }
-      const n = d.length / 4;
-      const mean = sum / n;
-      const sharp = edge / n; // higher = more detail/sharper
-      if (mean < 45) { setReady(false); setHint(t("cam_adjust")); return; }
-      if (mean > 225) { setReady(false); setHint(t("cam_adjust")); return; }
-      if (sharp < 6) { setReady(false); setHint(t("cam_adjust")); return; }
-      setReady(true); setHint(t("cam_ready"));
-    }, 450);
-    return () => clearInterval(id);
-  }, [shot, t]);
+    if (!shot && stream && videoRef.current) videoRef.current.srcObject = stream;
+  }, [stream, shot]);
 
   const capture = () => {
     const v = videoRef.current;
-    if (!v || v.videoWidth === 0) return;
-    const c = document.createElement("canvas");
-    const size = Math.min(v.videoWidth, v.videoHeight);
-    c.width = 900; c.height = 1100;
-    const ctx = c.getContext("2d");
-    // crop center portrait
-    const sw = v.videoWidth, sh = v.videoHeight;
-    const targetRatio = 900 / 1100;
-    let cropW = sw, cropH = sw / targetRatio;
-    if (cropH > sh) { cropH = sh; cropW = sh * targetRatio; }
-    const sx = (sw - cropW) / 2, sy = (sh - cropH) / 2;
-    ctx.drawImage(v, sx, sy, cropW, cropH, 0, 0, 900, 1100);
-    setShot(c.toDataURL("image/jpeg", 0.92));
+    if (!v || !v.videoWidth) return;
+    setShot(crop(v, v.videoWidth, v.videoHeight, size));
   };
 
+  const onFile = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => { setShot(crop(img, img.naturalWidth, img.naturalHeight, size)); URL.revokeObjectURL(url); };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  };
+
+  const use = () => { stream?.getTracks().forEach((tr) => tr.stop()); onCapture(shot); };
+
+  // Largest box with the output's shape that fits the available space.
+  const areaRef = useRef(null);
+  const [area, setArea] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = areaRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => setArea({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const scale = Math.min(area.w / size.w, area.h / size.h) || 0;
+  const frame = { width: size.w * scale, height: size.h * scale };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button data-testid="camera-close-btn" onClick={onClose} className="text-white p-2"><X size={24} /></button>
-        <span className="text-white/80 text-sm font-admin">{t("capture_photo")}</span>
-        <span className="w-8" />
+    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none">
+      <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" data-testid="camera-file-input" />
+
+      <div className="flex items-center justify-between px-2 py-2">
+        <button data-testid="camera-close-btn" onClick={onClose} aria-label="Close" className="p-3 text-white"><X size={24} /></button>
+        {!shot && stream && (
+          <button data-testid="camera-flip-btn" onClick={() => setFacing(facing === "environment" ? "user" : "environment")}
+            aria-label="Switch camera" className="p-3 text-white"><SwitchCamera size={22} /></button>
+        )}
       </div>
 
-      {err ? (
-        <div className="flex-1 flex items-center justify-center text-white/80 px-8 text-center">{err}</div>
-      ) : shot ? (
-        <>
-          <div className="flex-1 flex items-center justify-center px-4">
-            <img src={shot} alt="captured" className="max-h-[72vh] rounded-2xl object-contain" />
-          </div>
-          <div className="flex gap-3 p-5 pb-8">
-            <button data-testid="retake-btn" onClick={() => setShot(null)} className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white/10 text-white font-medium"><RotateCcw size={18} /> {t("retake")}</button>
-            <button data-testid="use-photo-btn" onClick={() => { stream?.getTracks().forEach((tr) => tr.stop()); onCapture(shot); }} className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-emerald-600 text-white font-semibold"><Check size={18} /> {t("use_photo")}</button>
-          </div>
-        </>
+      {/* Viewfinder / captured photo, same shape as the saved output */}
+      <div ref={areaRef} className="flex-1 min-h-0 mx-3 flex items-center justify-center">
+        <div className="relative overflow-hidden rounded-lg bg-neutral-900" style={frame}>
+          {shot ? (
+            <img src={shot} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
+          ) : err ? (
+            <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm text-center px-6">{err}</div>
+          ) : (
+            <>
+              <video ref={videoRef} autoPlay playsInline muted
+                className={`absolute inset-0 w-full h-full object-cover ${facing === "user" ? "-scale-x-100" : ""}`} />
+              {mode === "fabric" && (
+                <>
+                  {/* Square guide with corner marks */}
+                  <div className="absolute inset-[10%] pointer-events-none">
+                    {["top-0 left-0 border-t-2 border-l-2", "top-0 right-0 border-t-2 border-r-2",
+                      "bottom-0 left-0 border-b-2 border-l-2", "bottom-0 right-0 border-b-2 border-r-2"].map((c) => (
+                      <span key={c} className={`absolute w-8 h-8 border-white ${c}`} />
+                    ))}
+                  </div>
+                  <p className="absolute bottom-3 inset-x-0 text-center text-white text-xs px-4 pointer-events-none">
+                    <span className="bg-black/50 rounded-full px-3 py-1.5">{t("cam_fabric_hint")}</span>
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Controls */}
+      {shot ? (
+        <div className="grid grid-cols-2 gap-3 p-4 pb-8">
+          <button data-testid="retake-btn" onClick={() => (stream ? setShot(null) : fileRef.current?.click())}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white/10 text-white font-medium"><RotateCcw size={18} /> {t("retake")}</button>
+          <button data-testid="use-photo-btn" onClick={use}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white text-black font-semibold"><Check size={18} /> {t("use_photo")}</button>
+        </div>
       ) : (
-        <>
-          <div className="relative flex-1 overflow-hidden">
-            <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
-            {/* framing guide */}
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className={`rounded-[44%/38%] border-4 transition-colors ${ready ? "border-emerald-400" : "border-white/70"}`} style={{ width: "62%", height: "74%" }} />
-            </div>
-            <div className="absolute top-4 inset-x-0 text-center px-6">
-              <span className="inline-block bg-black/50 text-white text-sm px-4 py-2 rounded-full">{t("cam_guide")}</span>
-            </div>
-            <div className="absolute bottom-4 inset-x-0 text-center">
-              <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${ready ? "bg-emerald-500 text-white" : "bg-black/60 text-white/80"}`}>
-                <span className={`w-2.5 h-2.5 rounded-full ${ready ? "bg-white" : "bg-amber-400"}`} /> {hint}
-              </span>
-            </div>
-          </div>
-          <canvas ref={analyzeRef} className="hidden" />
-          <div className="flex items-center justify-center py-6 pb-9">
-            <button data-testid="shutter-btn" onClick={capture} disabled={!ready}
-              className={`w-18 h-18 rounded-full border-4 flex items-center justify-center transition-all ${ready ? "border-emerald-400 bg-emerald-500 scale-100" : "border-white/40 bg-white/20 scale-95"}`}
-              style={{ width: 72, height: 72 }}>
-              <CamIcon className="text-white" size={28} />
-            </button>
-          </div>
-        </>
+        <div className="grid grid-cols-3 items-center px-6 py-5 pb-9">
+          <button data-testid="upload-photo-btn" onClick={() => fileRef.current?.click()} aria-label={t("cam_upload")}
+            className="justify-self-start w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center"><Upload size={20} /></button>
+          <button data-testid="shutter-btn" onClick={capture} disabled={!stream} aria-label="Capture"
+            className="justify-self-center w-[72px] h-[72px] rounded-full border-4 border-white flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform">
+            <span className="w-[56px] h-[56px] rounded-full bg-white" />
+          </button>
+          <span />
+        </div>
       )}
     </div>
   );

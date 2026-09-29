@@ -116,9 +116,9 @@ Fill in:
 | `JWT_SECRET` | any long random text (run `openssl rand -hex 32` to make one) |
 | `SUPER_ADMIN_USERNAME` | your admin login |
 | `SUPER_ADMIN_PASSWORD` | your admin password |
-| `GEMINI_API_KEY` | your Google AI Studio key — <https://aistudio.google.com/apikey> |
-| `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` |
-| `GEMINI_IMAGE_FALLBACK_MODEL` | `gemini-2.5-flash-image` |
+| `OPENAI_API_KEY` | your OpenAI key — <https://platform.openai.com/api-keys> |
+| `OPENAI_IMAGE_MODEL` | `gpt-image-2.5-sunburst` (best at keeping the face while changing clothes; `gpt-image-2.5-flare` is the automatic fallback) |
+| `OPENAI_IMAGE_QUALITY` | `low` (cheapest, good for try-on; `medium` costs several times more) |
 
 Save with `Ctrl+O`, `Enter`, then `Ctrl+X`.
 
@@ -126,9 +126,8 @@ Save with `Ctrl+O`, `Enter`, then `Ctrl+X`.
 chmod 600 .env      # only root can read the secrets
 ```
 
-> The Gemini key currently used in Emergent belongs to Emergent’s universal key, so
-> you need **your own** Google AI Studio key for the droplet. It is free to create;
-> image generation is billed by Google to your own Google account.
+> Try-on images are generated with OpenAI’s image API, billed to your own OpenAI
+> account. Make sure billing is set up at <https://platform.openai.com/settings/organization/billing>.
 
 ---
 
@@ -279,7 +278,7 @@ systemctl reload nginx                # after editing nginx config
 | Site shows nginx default page | `rm -f /etc/nginx/sites-enabled/default && systemctl reload nginx` |
 | 502 Bad Gateway | Containers are down → `docker compose up -d`, then check `docker compose logs backend` |
 | Login fails / backend unhealthy | Wrong `MONGO_URL`, or droplet IP not whitelisted in Atlas → Network Access |
-| Try-on generation fails | Bad/exhausted `GEMINI_API_KEY`, or Google billing not enabled |
+| Try-on generation fails | Bad/exhausted `OPENAI_API_KEY`, or OpenAI billing not set up |
 | Build killed / out of memory | The setup script adds 2 GB swap; if it still fails, resize the droplet to 2 GB RAM |
 | GitHub Action fails at SSH | Re-copy the **private** key (all lines) into `DROPLET_SSH_KEY` |
 

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { api, apiErr, getToken } from "@/lib/api";
+import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { Database, History, BarChart3, Sliders, ScrollText, Users, Monitor, Download, Trash2, Plus, X, Copy } from "lucide-react";
+import { Database, History, BarChart3, Sliders, ScrollText, Users, Monitor, Download, Trash2, Plus, X, Copy, Search, Loader2 } from "lucide-react";
+import Avatar from "@/admin/Avatar";
 
 const TABS = [
   { id: "db", icon: Database, label: "set_db" },
@@ -14,30 +15,57 @@ const TABS = [
   { id: "display", icon: Monitor, label: "set_display" },
 ];
 
-function fmt(iso) { try { return new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
+// Runs an API action and shows a toast on failure, so no button fails silently.
+async function run(action, okMsg) {
+  try { await action(); if (okMsg) toast.success(okMsg); return true; }
+  catch (e) { toast.error(apiErr(e)); return false; }
+}
+
+// Date inputs give YYYY-MM-DD; the backend treats them as Indian calendar days.
+function rangeQuery(frm, to) {
+  const q = [];
+  if (frm) q.push(`frm=${frm}`);
+  if (to) q.push(`to=${to}`);
+  return q.length ? `?${q.join("&")}` : "";
+}
+
+function fmt(iso) { try { return new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }); } catch { return ""; } }
 
 function CustomerDB() {
   const { t } = useLang();
   const [list, setList] = useState([]);
   const [sel, setSel] = useState(null);
-  useEffect(() => { api.get("/customers").then((r) => setList(r.data)).catch(() => {}); }, []);
+  const [q, setQ] = useState("");
+  useEffect(() => { api.get("/customers").then((r) => setList(r.data)).catch((e) => toast.error(apiErr(e))); }, []);
+  const needle = q.trim().toLowerCase();
+  const shown = needle
+    ? list.filter((c) => [c.name, c.mobile, c.mobile2].some((v) => (v || "").toLowerCase().includes(needle)))
+    : list;
   const exportXl = async () => {
     try {
-      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/customers/export`, { headers: { Authorization: `Bearer ${getToken()}` } });
-      const blob = await res.blob(); const url = URL.createObjectURL(blob);
+      // axios rejects non-2xx responses, so an error is never saved as the .xlsx file.
+      const { data } = await api.get("/customers/export", { responseType: "blob" });
+      const url = URL.createObjectURL(data);
       const a = document.createElement("a"); a.href = url; a.download = "somani_customers.xlsx"; a.click();
-    } catch (e) { toast.error("Export failed"); }
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { toast.error("Export failed. Please try again."); }
   };
   return (
     <div>
       <div className="flex justify-between items-center mb-3">
-        <span className="text-sm text-gray-500">{list.length} customers</span>
+        <span className="text-sm text-gray-500">{needle ? `${shown.length} / ${list.length}` : list.length} customers</span>
         <button data-testid="export-excel-btn" onClick={exportXl} className="flex items-center gap-1.5 text-sm bg-emerald-600 text-white px-3 py-1.5 rounded-lg"><Download size={15} /> {t("export_excel")}</button>
       </div>
+      <div className="relative mb-3">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input data-testid="customer-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("search_customers")}
+          className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-[#1E3A8A] bg-white" />
+      </div>
       <div className="bg-white rounded-xl border divide-y">
-        {list.map((c) => (
+        {shown.length === 0 && <p className="text-center text-gray-400 text-sm py-6">—</p>}
+        {shown.map((c) => (
           <button data-testid={`customer-${c.id}`} key={c.id} onClick={() => setSel(c)} className="w-full text-left flex items-center gap-3 p-3 hover:bg-gray-50">
-            <img src={c.photo} alt="" className="w-10 h-12 object-cover rounded-md border" />
+            <Avatar src={c.thumb || c.photo} className="w-10 h-12 rounded-md shrink-0" />
             <div className="flex-1"><p className="font-medium text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.mobile}</p></div>
             <div className="text-right text-xs text-gray-400"><p>{c.stats?.total_sessions} sess</p><p className="text-emerald-600">₹{c.stats?.total_collected}</p></div>
           </button>
@@ -51,7 +79,7 @@ function CustomerDB() {
 function CustomerProfile({ customer, onClose }) {
   const { t } = useLang();
   const [data, setData] = useState(null);
-  useEffect(() => { api.get(`/customers/${customer.id}`).then((r) => setData(r.data)).catch(() => {}); }, [customer.id]);
+  useEffect(() => { api.get(`/customers/${customer.id}`).then((r) => setData(r.data)).catch((e) => toast.error(apiErr(e))); }, [customer.id]);
   return (
     <div className="fixed inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[88vh] overflow-y-auto no-scrollbar" onClick={(e) => e.stopPropagation()}>
@@ -59,7 +87,7 @@ function CustomerProfile({ customer, onClose }) {
         {data && (
           <div className="p-4">
             <div className="flex gap-4 items-center mb-4">
-              <img src={data.photo} alt="" className="w-20 h-24 object-cover rounded-lg border" />
+              <Avatar src={data.photo} className="w-20 h-24 rounded-lg shrink-0" />
               <div><p className="font-semibold text-lg">{data.name}</p><p className="text-gray-500 text-sm">{data.mobile}</p>{data.mobile2 && <p className="text-gray-400 text-xs">{data.mobile2}</p>}</div>
             </div>
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -90,13 +118,20 @@ function SessionHistory() {
   const [frm, setFrm] = useState(""); const [to, setTo] = useState("");
   const [edit, setEdit] = useState(null);
   const load = () => {
-    let q = []; if (frm) q.push(`frm=${frm}T00:00:00`); if (to) q.push(`to=${to}T23:59:59`);
-    api.get(`/sessions/history${q.length ? "?" + q.join("&") : ""}`).then((r) => setList(r.data)).catch(() => {});
+    api.get(`/sessions/history${rangeQuery(frm, to)}`).then((r) => setList(r.data)).catch((e) => toast.error(apiErr(e)));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [frm, to]);
-  const del = async (id) => { if (!window.confirm("Delete this session?")) return; await api.delete(`/sessions/${id}`); toast.success("Deleted"); load(); };
-  const saveEdit = async () => { await api.patch(`/sessions/${edit.id}`, { purchased: edit.purchased, total_value: parseFloat(edit.total_value) || 0, discount: parseFloat(edit.discount) || 0, final_paid: parseFloat(edit.final_paid) || 0 }); toast.success("Updated"); setEdit(null); load(); };
+  const del = async (id) => {
+    if (!window.confirm("Delete this session?")) return;
+    if (await run(() => api.delete(`/sessions/${id}`), "Deleted")) load();
+  };
+  const saveEdit = async () => {
+    const tv = parseFloat(edit.total_value) || 0, dv = parseFloat(edit.discount) || 0;
+    if (edit.purchased && dv > tv) { toast.error("Discount cannot be more than the total value"); return; }
+    const ok = await run(() => api.patch(`/sessions/${edit.id}`, { purchased: !!edit.purchased, total_value: tv, discount: dv, final_paid: parseFloat(edit.final_paid) || 0 }), "Updated");
+    if (ok) { setEdit(null); load(); }
+  };
   return (
     <div>
       <div className="flex gap-2 mb-3">
@@ -138,7 +173,7 @@ function Stats() {
   const { t } = useLang();
   const [frm, setFrm] = useState(""); const [to, setTo] = useState("");
   const [s, setS] = useState(null);
-  useEffect(() => { let q = []; if (frm) q.push(`frm=${frm}T00:00:00`); if (to) q.push(`to=${to}T23:59:59`); api.get(`/stats${q.length ? "?" + q.join("&") : ""}`).then((r) => setS(r.data)).catch(() => {}); }, [frm, to]);
+  useEffect(() => { api.get(`/stats${rangeQuery(frm, to)}`).then((r) => setS(r.data)).catch((e) => toast.error(apiErr(e))); }, [frm, to]);
   return (
     <div>
       <div className="flex gap-2 mb-4">
@@ -163,38 +198,42 @@ function Config({ isSuper }) {
   const { t } = useLang();
   const [cats, setCats] = useState([]);
   const [fields, setFields] = useState([]);
-  const loadC = () => api.get("/config/categories").then((r) => setCats(r.data)).catch(() => {});
-  const loadF = () => api.get("/config/fields").then((r) => setFields(r.data)).catch(() => {});
+  const [editing, setEditing] = useState(null); // { cat, idx, label, description }
+  const loadC = () => api.get("/config/categories").then((r) => setCats(r.data)).catch((e) => toast.error(apiErr(e)));
+  const loadF = () => api.get("/config/fields").then((r) => setFields(r.data)).catch((e) => toast.error(apiErr(e)));
   useEffect(() => { loadC(); loadF(); }, []);
 
+  const saveItems = (cat, items, okMsg) =>
+    run(() => api.put(`/config/categories/${cat.id}`, { label: cat.label, description: cat.description, slots: cat.slots, items, order: cat.order }), okMsg);
+
   const addCat = async () => {
-    const label = prompt("Category name (e.g. Footwear)"); if (!label) return;
-    const description = prompt("One line description for AI context") || "";
-    const slotsRaw = prompt("Slots (comma separated from: top,bottom,third)", "top") || "top";
-    const slots = slotsRaw.split(",").map((x) => x.trim()).filter(Boolean);
-    await api.post("/config/categories", { label, description, slots, slot_count: slots.length, items: [], order: cats.length + 1 });
-    toast.success("Added"); loadC();
+    const label = prompt("Category name (e.g. Sherwani Set)"); if (!label) return;
+    const description = prompt("One line description") || "";
+    const slotsRaw = prompt("Slots, comma separated, from: top, bottom, third", "top") || "top";
+    const slots = slotsRaw.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+    if (await run(() => api.post("/config/categories", { label, description, slots, items: [], order: cats.length + 1 }), "Added")) loadC();
   };
-  const addItem = async (cat) => {
-    const label = prompt("Item name (e.g. Full Sleeve Shirt)"); if (!label) return;
-    const description = prompt("Item description for AI") || "";
-    const items = [...(cat.items || []), { label, description }];
-    await api.put(`/config/categories/${cat.id}`, { label: cat.label, description: cat.description, slots: cat.slots, slot_count: cat.slot_count, items, order: cat.order });
-    loadC();
+  const addItem = (cat) => setEditing({ cat, idx: -1, label: "", description: "" });
+  const editItem = (cat, idx) => setEditing({ cat, idx, label: cat.items[idx].label, description: cat.items[idx].description || "" });
+  const saveItem = async () => {
+    const { cat, idx } = editing;
+    const label = editing.label.trim();
+    if (!label) { toast.error("Item name is required"); return; }
+    const item = { label, description: editing.description.trim() };
+    const items = idx === -1 ? [...(cat.items || []), item] : cat.items.map((it, i) => (i === idx ? item : it));
+    if (await saveItems(cat, items, "Saved")) { setEditing(null); loadC(); }
   };
   const delItem = async (cat, idx) => {
-    const items = cat.items.filter((_, i) => i !== idx);
-    await api.put(`/config/categories/${cat.id}`, { label: cat.label, description: cat.description, slots: cat.slots, slot_count: cat.slot_count, items, order: cat.order });
-    loadC();
+    if (!window.confirm(`Remove ${cat.items[idx].label}?`)) return;
+    if (await saveItems(cat, cat.items.filter((_, i) => i !== idx))) loadC();
   };
-  const delCat = async (id) => { if (!window.confirm("Delete category?")) return; await api.delete(`/config/categories/${id}`); loadC(); };
+  const delCat = async (id) => { if (!window.confirm("Delete category?")) return; if (await run(() => api.delete(`/config/categories/${id}`), "Deleted")) loadC(); };
   const addField = async () => {
     const label = prompt("Field label (e.g. Date of Birth)"); if (!label) return;
-    const type = prompt("Type: text / number / date / checkbox", "text") || "text";
-    await api.post("/config/fields", { label, type, required: false, order: fields.length + 1 });
-    toast.success("Added"); loadF();
+    const type = (prompt("Type: text / number / date / checkbox", "text") || "text").trim().toLowerCase();
+    if (await run(() => api.post("/config/fields", { label, type, required: false, order: fields.length + 1 }), "Added")) loadF();
   };
-  const delField = async (id) => { await api.delete(`/config/fields/${id}`); loadF(); };
+  const delField = async (id) => { if (!window.confirm("Delete field?")) return; if (await run(() => api.delete(`/config/fields/${id}`))) loadF(); };
 
   if (!isSuper) return <p className="text-center text-gray-400 py-10 text-sm">{t("super_only")}</p>;
 
@@ -206,16 +245,44 @@ function Config({ isSuper }) {
           {cats.map((c) => (
             <div key={c.id} className="bg-white border rounded-xl p-3">
               <div className="flex justify-between items-start"><div><p className="font-medium text-sm">{c.label}</p><p className="text-xs text-gray-400">{c.description} · slots: {(c.slots || []).join(", ")}</p></div><button onClick={() => delCat(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={15} /></button></div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 divide-y border rounded-lg">
                 {(c.items || []).map((it, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 bg-gray-100 rounded-full px-2.5 py-1 text-xs">{it.label}<button onClick={() => delItem(c, i)} className="text-gray-400 hover:text-red-500"><X size={12} /></button></span>
+                  <div key={i} className="flex items-start gap-2 p-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium">{it.label}</p>
+                      <p className="text-xs text-gray-400 line-clamp-2">{it.description || "No AI description"}</p>
+                    </div>
+                    <button data-testid={`edit-item-${c.id}-${i}`} onClick={() => editItem(c, i)} className="text-xs text-[#1E3A8A] underline shrink-0">{t("edit")}</button>
+                    <button onClick={() => delItem(c, i)} className="text-gray-400 hover:text-red-500 shrink-0" aria-label="Remove item"><X size={14} /></button>
+                  </div>
                 ))}
-                <button data-testid={`add-item-${c.id}`} onClick={() => addItem(c)} className="text-xs text-[#1E3A8A] border border-dashed border-[#1E3A8A]/40 rounded-full px-2.5 py-1">+ item</button>
               </div>
+              <button data-testid={`add-item-${c.id}`} onClick={() => addItem(c)} className="mt-2 text-xs text-[#1E3A8A] border border-dashed border-[#1E3A8A]/40 rounded-full px-2.5 py-1">+ item</button>
             </div>
           ))}
         </div>
       </div>
+      {editing && (
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setEditing(null)}>
+          <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold">{editing.idx === -1 ? "Add item" : "Edit item"} · {editing.cat.label}</h3>
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider">Item name</label>
+              <input data-testid="item-label" value={editing.label} onChange={(e) => setEditing({ ...editing, label: e.target.value })} className="mt-1 w-full border rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider">Description for AI</label>
+              <textarea data-testid="item-description" rows={5} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                placeholder="How this garment should look: length, collar, sleeves, fit, tucked in or not..." className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+              <p className="text-xs text-gray-400 mt-1">The AI follows this when stitching the fabric into this garment.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEditing(null)} className="flex-1 py-2.5 rounded-lg border">{t("cancel")}</button>
+              <button data-testid="save-item" onClick={saveItem} className="flex-1 bg-[#1E3A8A] text-white py-2.5 rounded-lg font-medium">{t("save")}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div>
         <div className="flex justify-between items-center mb-2"><h3 className="font-semibold text-sm">Session Fields</h3><button data-testid="add-field-btn" onClick={addField} className="text-sm text-[#1E3A8A] flex items-center gap-1"><Plus size={15} /> {t("add")}</button></div>
         <div className="bg-white border rounded-xl divide-y">
@@ -231,7 +298,7 @@ function Config({ isSuper }) {
 
 function Logs() {
   const [logs, setLogs] = useState([]);
-  useEffect(() => { api.get("/logs").then((r) => setLogs(r.data)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/logs").then((r) => setLogs(r.data)).catch((e) => toast.error(apiErr(e))); }, []);
   return (
     <div className="bg-white border rounded-xl divide-y max-h-[70vh] overflow-y-auto">
       {logs.map((l) => (
@@ -245,10 +312,14 @@ function Admins({ isSuper }) {
   const { t } = useLang();
   const [list, setList] = useState([]);
   const [u, setU] = useState(""); const [p, setP] = useState("");
-  const load = () => api.get("/admins").then((r) => setList(r.data)).catch(() => {});
+  const load = () => api.get("/admins").then((r) => setList(r.data)).catch((e) => toast.error(apiErr(e)));
   useEffect(() => { load(); }, []);
-  const create = async () => { if (!u || !p) return; try { await api.post("/admins", { username: u, password: p }); toast.success("Created"); setU(""); setP(""); load(); } catch (e) { toast.error(apiErr(e)); } };
-  const del = async (id) => { if (!window.confirm("Delete admin?")) return; await api.delete(`/admins/${id}`); load(); };
+  const create = async () => {
+    if (!u.trim() || !p) { toast.error("Enter a username and password"); return; }
+    if (p.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    if (await run(() => api.post("/admins", { username: u.trim(), password: p }), "Created")) { setU(""); setP(""); load(); }
+  };
+  const del = async (id) => { if (!window.confirm("Delete admin?")) return; if (await run(() => api.delete(`/admins/${id}`), "Deleted")) load(); };
   return (
     <div>
       <div className="bg-white border rounded-xl divide-y mb-4">
@@ -260,7 +331,7 @@ function Admins({ isSuper }) {
         <div className="bg-white border rounded-xl p-4 space-y-3">
           <h3 className="font-semibold text-sm">{t("add_admin")}</h3>
           <input data-testid="new-admin-username" placeholder={t("username")} value={u} onChange={(e) => setU(e.target.value)} autoCapitalize="none" className="w-full border rounded-lg px-3 py-2" />
-          <input data-testid="new-admin-password" placeholder={t("password")} value={p} onChange={(e) => setP(e.target.value)} className="w-full border rounded-lg px-3 py-2" />
+          <input data-testid="new-admin-password" type="password" autoComplete="new-password" placeholder={`${t("password")} (min 8)`} value={p} onChange={(e) => setP(e.target.value)} className="w-full border rounded-lg px-3 py-2" />
           <button data-testid="create-admin-btn" onClick={create} className="w-full bg-[#1E3A8A] text-white py-2.5 rounded-lg font-medium">{t("create")}</button>
         </div>
       )}
@@ -272,10 +343,17 @@ function DisplaySettings({ isSuper }) {
   const { t } = useLang();
   const [settings, setSettings] = useState(null);
   const [idle, setIdle] = useState("");
-  useEffect(() => { api.get("/settings").then((r) => { setSettings(r.data); setIdle(r.data.idle_image || ""); }).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get("/settings").then((r) => { setSettings(r.data); setIdle(r.data.idle_image || ""); })
+      .catch((e) => toast.error(apiErr(e)));
+  }, []);
   const link = settings ? `${window.location.origin}/d/${settings.display_secret}` : "";
-  const onFile = (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => setIdle(r.result); r.readAsDataURL(f); };
-  const save = async () => { try { await api.put("/settings", { idle_image: idle }); toast.success("Saved"); } catch (e) { toast.error(apiErr(e)); } };
+  const onFile = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    if (f.size > 6 * 1024 * 1024) { toast.error("Image is too large (max 6 MB)"); return; }
+    const r = new FileReader(); r.onload = () => setIdle(r.result); r.readAsDataURL(f);
+  };
+  const save = () => run(() => api.put("/settings", { idle_image: idle }), "Saved");
   return (
     <div className="space-y-4">
       <div className="bg-white border rounded-xl p-4">
@@ -291,6 +369,103 @@ function DisplaySettings({ isSuper }) {
           <button data-testid="save-display" onClick={save} className="mt-3 w-full bg-[#1E3A8A] text-white py-2.5 rounded-lg font-medium">{t("save")}</button>
         </div>
       )}
+      {isSuper && settings && <WatermarkSettings initial={settings} />}
+    </div>
+  );
+}
+
+const WM_STYLES = [
+  { id: "lattice", label: "Tiled grid" },
+  { id: "diagonal", label: "Diagonal" },
+  { id: "center", label: "Centre" },
+  { id: "corner", label: "Corner" },
+  { id: "band", label: "Bottom strip" },
+];
+
+function Segmented({ value, options, onChange, testid }) {
+  return (
+    <div className="grid gap-1 p-1 bg-gray-100 rounded-lg" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map((o) => (
+        <button key={o.id} data-testid={`${testid}-${o.id}`} onClick={() => onChange(o.id)}
+          className={`py-1.5 rounded-md text-xs font-medium ${value === o.id ? "bg-white shadow-sm text-[#1E3A8A]" : "text-gray-500"}`}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+// Watermark editor. The preview is drawn by the server exactly as it will be
+// burned into try-on images, and refreshes as the settings change.
+function WatermarkSettings({ initial }) {
+  const { t } = useLang();
+  const [wm, setWm] = useState({
+    watermark_text: initial.watermark_text ?? "Somani Fabs",
+    watermark_style: initial.watermark_style || "lattice",
+    watermark_visibility: initial.watermark_visibility || "subtle",
+    watermark_weight: initial.watermark_weight || "regular",
+  });
+  const [preview, setPreview] = useState("");
+  const [loading, setLoading] = useState(false);
+  const set = (k) => (v) => setWm((w) => ({ ...w, [k]: v }));
+
+  const lines = wm.watermark_text.split("\n");
+  const tooMany = lines.filter((l) => l.trim()).length > 2;
+  const tooLong = lines.some((l) => l.trim().length > 40);
+
+  useEffect(() => {
+    if (tooMany || tooLong) return;
+    let alive = true;
+    setLoading(true);
+    const id = setTimeout(() => {
+      api.post("/settings/watermark-preview", wm)
+        .then((r) => alive && setPreview(r.data.image))
+        .catch(() => {})
+        .finally(() => alive && setLoading(false));
+    }, 350);
+    return () => { alive = false; clearTimeout(id); };
+  }, [wm, tooMany, tooLong]);
+
+  const save = () => {
+    if (tooMany || tooLong) { toast.error("Up to 2 lines, 40 characters each"); return; }
+    run(() => api.put("/settings", wm), "Saved");
+  };
+
+  return (
+    <div className="bg-white border rounded-xl p-4 space-y-4">
+      <p className="text-xs text-gray-400 uppercase">{t("watermark")}</p>
+      <div>
+        <label className="text-xs text-gray-500">{t("watermark_text")} · max 2 lines</label>
+        <textarea data-testid="watermark-text" rows={2} value={wm.watermark_text} onChange={(e) => set("watermark_text")(e.target.value)}
+          className={`mt-1 w-full border rounded-lg px-3 py-2 text-sm resize-none ${tooMany || tooLong ? "border-red-400" : ""}`} />
+        {(tooMany || tooLong) && <p className="text-xs text-red-500 mt-1">Up to 2 lines, 40 characters each</p>}
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">Type</label>
+        <div className="mt-1 grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+          {WM_STYLES.map((s) => (
+            <button key={s.id} data-testid={`wm-style-${s.id}`} onClick={() => set("watermark_style")(s.id)}
+              className={`py-2 px-1 rounded-lg border text-xs font-medium ${wm.watermark_style === s.id ? "border-[#1E3A8A] bg-blue-50 text-[#1E3A8A]" : "border-gray-200 text-gray-600"}`}>{s.label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-gray-500">Visibility</label>
+          <div className="mt-1"><Segmented testid="wm-vis" value={wm.watermark_visibility} onChange={set("watermark_visibility")}
+            options={[{ id: "subtle", label: "Subtle" }, { id: "medium", label: "Medium" }, { id: "strong", label: "Strong" }]} /></div>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Text</label>
+          <div className="mt-1"><Segmented testid="wm-weight" value={wm.watermark_weight} onChange={set("watermark_weight")}
+            options={[{ id: "regular", label: "Regular" }, { id: "bold", label: "Bold" }]} /></div>
+        </div>
+      </div>
+      <div className="relative rounded-lg overflow-hidden bg-gray-100 flex justify-center">
+        {preview ? <img data-testid="wm-preview" src={preview} alt="Watermark preview" className="max-h-80 object-contain" />
+          : <div className="h-60" />}
+        {loading && <Loader2 className="absolute top-2 right-2 animate-spin text-white drop-shadow" size={18} />}
+      </div>
+      <p className="text-xs text-gray-400">{t("watermark_note")}</p>
+      <button data-testid="save-watermark" onClick={save} className="w-full bg-[#1E3A8A] text-white py-2.5 rounded-lg font-medium">{t("save")}</button>
     </div>
   );
 }

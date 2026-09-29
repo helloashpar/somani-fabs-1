@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
 import { useLang, LANGS } from "@/i18n";
 import { Globe, Phone, MapPin, ArrowRight, ChevronLeft, ChevronRight, Scissors, Shirt, Layers, Sparkles } from "lucide-react";
 
@@ -109,7 +108,6 @@ export default function Landing() {
             <a href="#collection" className="hidden sm:block text-sm text-gray-700 hover:text-[#E07A5F] px-2">{t("nav_collection")}</a>
             <a href="#visit" className="hidden sm:block text-sm text-gray-700 hover:text-[#E07A5F] px-2">{t("nav_visit")}</a>
             <LangToggle />
-            <Link data-testid="admin-link" to="/admin" className="text-sm font-medium px-4 py-1.5 rounded-full bg-[#1D3557] text-white hover:bg-[#16273f] transition-colors">{t("nav_admin")}</Link>
           </div>
         </div>
       </header>
