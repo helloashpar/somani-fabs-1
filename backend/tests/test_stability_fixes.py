@@ -25,7 +25,7 @@ from PIL import Image
 
 BASE_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://unstitched-tryon-app.preview.emergentagent.com",
+    "http://localhost:8001",
 ).rstrip("/")
 API = f"{BASE_URL}/api"
 

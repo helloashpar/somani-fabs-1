@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useLang, LANGS } from "@/i18n";
-import { Globe, Phone, MapPin, ArrowRight, ChevronLeft, ChevronRight, Scissors, Shirt, Layers, Sparkles } from "lucide-react";
+import { useEnglish as useLang } from "@/i18n";
+import { Phone, MapPin, ArrowRight, ChevronLeft, ChevronRight, Scissors, Shirt, Layers, Sparkles } from "lucide-react";
 
 // Hero catalog carousel — one slide per category we stock. Labels reuse the
 // existing sell_* strings so all three languages stay in sync.
@@ -13,29 +13,6 @@ const CATALOG = [
 const SLIDE_MS = 5000;
 const FAB1 = "https://images.unsplash.com/photo-1660845683010-63e7422420b9?crop=entropy&cs=srgb&fm=jpg&q=85&w=1200";
 const ROLL = "https://images.pexels.com/photos/6766360/pexels-photo-6766360.jpeg?auto=compress&cs=tinysrgb&w=1200";
-
-function LangToggle() {
-  const { lang, setLang } = useLang();
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button data-testid="lang-toggle-btn" onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-[#1D3557] hover:bg-black/5 transition-colors">
-        <Globe size={16} /> {LANGS.find((l) => l.id === lang)?.label}
-      </button>
-      {open && (
-        <div className="absolute right-0 mt-2 w-36 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
-          {LANGS.map((l) => (
-            <button key={l.id} data-testid={`lang-opt-${l.id}`} onClick={() => { setLang(l.id); setOpen(false); }}
-              className={`block w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 ${lang === l.id ? "text-[#E07A5F] font-semibold" : "text-gray-700"}`}>
-              {l.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function HeroCarousel() {
   const { t } = useLang();
@@ -107,7 +84,6 @@ export default function Landing() {
             <a href="#about" className="hidden sm:block text-sm text-gray-700 hover:text-[#E07A5F] px-2">{t("nav_about")}</a>
             <a href="#collection" className="hidden sm:block text-sm text-gray-700 hover:text-[#E07A5F] px-2">{t("nav_collection")}</a>
             <a href="#visit" className="hidden sm:block text-sm text-gray-700 hover:text-[#E07A5F] px-2">{t("nav_visit")}</a>
-            <LangToggle />
           </div>
         </div>
       </header>

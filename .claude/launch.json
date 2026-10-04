@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "E:\\Ashpar\\somani-fabs-1\\backend\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "server:app", "--app-dir", "E:\\Ashpar\\somani-fabs-1\\backend", "--host", "127.0.0.1", "--port", "8001"],
+      "port": 8001
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "E:\\Ashpar\\somani-fabs-1\\frontend", "start"],
+      "port": 3000
+    },
+    {
+      "name": "backend-catalog",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DB_NAME=somanifabs_catalog_test&& set CORS_ORIGINS=http://localhost:3001&& E:\\Ashpar\\somani-fabs-1\\backend\\.venv\\Scripts\\python.exe -m uvicorn server:app --app-dir E:\\Ashpar\\somani-fabs-1\\backend --host 127.0.0.1 --port 8002"],
+      "port": 8002
+    },
+    {
+      "name": "frontend-catalog",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set PORT=3001&& set REACT_APP_BACKEND_URL=http://localhost:8002&& npm --prefix E:\\Ashpar\\somani-fabs-1\\frontend start"],
+      "port": 3001
+    }
+  ]
+}

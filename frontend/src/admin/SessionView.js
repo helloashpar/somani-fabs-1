@@ -2,13 +2,18 @@ import React, { useState, useEffect, useRef } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { X, Eye, Plus, RefreshCw, CheckCircle2, Loader2, Monitor, Camera as CamIcon } from "lucide-react";
+import { X, Plus, RefreshCw, CheckCircle2, Monitor, Camera as CamIcon, Sparkles, AlertTriangle, Trash2, ChevronLeft, ChevronRight, LogOut, ShoppingBag, CircleSlash, Maximize2 } from "lucide-react";
 import Avatar from "@/admin/Avatar";
 import Camera from "@/admin/Camera";
 import NewTrial from "@/admin/NewTrial";
 import { bestColumns } from "@/lib/bestGrid";
+import { loadCatalog } from "@/lib/catalog";
+import { useWhatsApp, WaPanel, WaStatus, WaTrialActions } from "@/admin/WhatsApp";
+import { HistoryCard } from "@/admin/CustomerHistory";
+import { can } from "@/admin/perms";
+import { Button, Card, Page, Sheet, Skeleton, Badge, Empty, IconButton, Field, inputCls } from "@/admin/ui";
 
-const PAGE = 10;
+const PAGE = 12;
 
 // While open, mirrors what this admin is viewing onto the shop display screen.
 // `target` is { trial_id } for one try-on or { session_id } for "show all".
@@ -22,15 +27,28 @@ function useLiveDisplay(target) {
   }, [key]);
 }
 
+function OnScreen() {
+  const { t } = useLang();
+  return <span className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-white/10 rounded-full px-3 py-1.5"><Monitor size={14} /> {t("on_shop_screen")}</span>;
+}
+
 function PreviewModal({ trial, onClose }) {
   useLiveDisplay({ trial_id: trial.id });
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <div data-testid="preview-modal" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={onClose}>
-      <div className="flex justify-end p-4"><button data-testid="close-preview" onClick={onClose} className="text-white p-2 bg-white/10 rounded-full"><X size={24} /></button></div>
-      <div className="flex-1 flex items-center justify-center px-4 pb-6" onClick={(e) => e.stopPropagation()}>
-        <img src={trial.generated_image} alt="" className="max-h-full max-w-full object-contain rounded-xl" />
+    <div data-testid="preview-modal" className="fixed inset-0 z-50 bg-gray-950/95 flex flex-col animate-in fade-in duration-150" onClick={onClose}>
+      <div className="flex items-center justify-between gap-3 p-3 sm:p-4">
+        <OnScreen />
+        <IconButton data-testid="close-preview" icon={X} label="Close" tone="onDark" onClick={onClose} size={22} />
       </div>
-      <div className="text-center pb-6 text-white/70 text-sm">{trial.description}</div>
+      <div className="flex-1 min-h-0 flex items-center justify-center px-4" onClick={(e) => e.stopPropagation()}>
+        <img src={trial.generated_image} alt={trial.description} className="max-h-full max-w-full object-contain rounded-2xl animate-in zoom-in-[0.97] duration-200" />
+      </div>
+      <p className="text-center py-4 px-6 text-white/75 text-sm">{trial.description}</p>
     </div>
   );
 }
@@ -49,54 +67,16 @@ function ShowAllModal({ sessionId, trials, onClose }) {
   }, []);
   const cols = bestColumns(trials.length, size.w, size.h);
   return (
-    <div data-testid="show-all-modal" className="fixed inset-0 z-50 bg-black flex flex-col">
+    <div data-testid="show-all-modal" className="fixed inset-0 z-50 bg-gray-950 flex flex-col animate-in fade-in duration-150">
       <div className="flex justify-between items-center p-3">
-        <span className="text-white/70 text-sm flex items-center gap-2"><Monitor size={16} /> {trials.length}</span>
-        <button data-testid="close-show-all" onClick={onClose} className="text-white p-2 bg-white/10 rounded-full"><X size={24} /></button>
+        <OnScreen />
+        <IconButton data-testid="close-show-all" icon={X} label="Close" tone="onDark" onClick={onClose} size={22} />
       </div>
       <div ref={box} className="flex-1 grid gap-1 p-1 min-h-0" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" }}>
         {trials.map((tr) => (
           <img key={tr.id} src={tr.generated_image} alt={tr.description} className="w-full h-full object-contain min-h-0" />
         ))}
       </div>
-    </div>
-  );
-}
-
-// Session without a customer photo: a plain visit + purchase log. Adding a
-// photo turns it into a normal try-on session.
-function EntrySession({ session, onAddPhoto, onEnd }) {
-  const { t } = useLang();
-  const closed = session.status === "closed";
-  return (
-    <div className="p-4 pb-28">
-      <div className="bg-white rounded-xl border p-4 flex items-center gap-4 mb-4">
-        <Avatar className="w-16 h-20 rounded-lg shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900 truncate">{session.customer_name}</p>
-          <p className="text-sm text-gray-500">{session.mobile}{session.mobile2 ? ` · ${session.mobile2}` : ""}</p>
-          <span className="inline-block mt-1 text-[10px] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">{t("entry_session")}</span>
-        </div>
-        {closed && <span className="text-xs text-gray-400 flex items-center gap-1"><CheckCircle2 size={14} /> Closed</span>}
-      </div>
-      {!closed && (
-        <>
-          <button data-testid="convert-tryon-btn" onClick={onAddPhoto}
-            className="w-full bg-white border-2 border-dashed border-[#1E3A8A]/40 rounded-xl p-5 flex items-center gap-4 text-left hover:bg-blue-50/40">
-            <span className="w-12 h-12 rounded-full bg-[#1E3A8A] text-white flex items-center justify-center shrink-0"><CamIcon size={22} /></span>
-            <span>
-              <span className="block font-semibold text-[#1E3A8A]">{t("add_photo_tryon")}</span>
-              <span className="block text-xs text-gray-500 mt-0.5">{t("entry_desc")}</span>
-            </span>
-          </button>
-          <button data-testid="end-session-btn" onClick={onEnd} className="mt-4 w-full bg-[#DC2626] text-white py-4 rounded-xl font-semibold">{t("end_session")}</button>
-        </>
-      )}
-      {closed && (
-        <div className="bg-white rounded-xl border p-4 text-sm text-gray-600">
-          {session.purchased ? `✓ ₹${session.final_paid}` : `✗ ${t("not_purchased")}`}
-        </div>
-      )}
     </div>
   );
 }
@@ -128,27 +108,105 @@ function EndSession({ onClose, onEnd }) {
     await onEnd(purchased ? { purchased, total_value: tv, discount: dv, final_paid: pv } : { purchased });
     setSaving(false);
   };
+  const choice = (on, tone) => `flex flex-col items-center justify-center gap-2 h-24 rounded-2xl border-2 font-medium transition-all active:scale-[0.98] ${on ? tone : "border-gray-200 text-gray-700 hover:border-gray-300"}`;
+  const money = (testid, label, value, onChange) => (
+    <Field label={label}>
+      <div className="relative">
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
+        <input data-testid={testid} inputMode="decimal" value={value} onChange={onChange} className={`${inputCls} pl-8 num`} />
+      </div>
+    </Field>
+  );
   return (
-    <div className="fixed inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b"><h3 className="font-semibold">{t("end_session")}</h3><button onClick={onClose} className="p-1 text-gray-500"><X size={22} /></button></div>
-        <div className="p-4 space-y-4">
-          <p className="text-sm font-medium">{t("purchased_q")}</p>
-          <div className="flex gap-3">
-            <button data-testid="purchased-yes" onClick={() => setPurchased(true)} className={`flex-1 py-2.5 rounded-lg border font-medium ${purchased === true ? "bg-emerald-600 text-white border-emerald-600" : "border-gray-300"}`}>{t("yes")}</button>
-            <button data-testid="purchased-no" onClick={() => setPurchased(false)} className={`flex-1 py-2.5 rounded-lg border font-medium ${purchased === false ? "bg-gray-700 text-white border-gray-700" : "border-gray-300"}`}>{t("no")}</button>
+    <Sheet title={t("end_session")} subtitle={t("purchased_q")} onClose={onClose} size="sm" locked={saving}
+      footer={<Button data-testid="confirm-end-session" onClick={submit} loading={saving} size="lg" full>{t("save")}</Button>}>
+      <div className="grid grid-cols-2 gap-3">
+        <button data-testid="purchased-yes" onClick={() => setPurchased(true)} className={choice(purchased === true, "border-emerald-500 bg-emerald-50 text-emerald-800")}>
+          <ShoppingBag size={22} /> {t("yes")}
+        </button>
+        <button data-testid="purchased-no" onClick={() => setPurchased(false)} className={choice(purchased === false, "border-gray-700 bg-gray-50 text-gray-900")}>
+          <CircleSlash size={22} /> {t("no")}
+        </button>
+      </div>
+      {purchased && (
+        <div className="space-y-4 mt-5 animate-in fade-in slide-in-from-top-1 duration-200">
+          {money("total-value", t("total_value"), total, (e) => setTotal(e.target.value))}
+          {money("discount", t("discount"), discount, (e) => setDiscount(e.target.value))}
+          {money("final-paid", t("final_paid"), paid, (e) => { setPaidEdited(true); setPaid(e.target.value); })}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+// One try-on as a gallery tile: the image is the content.
+function TrialCard({ tr, wa, onView, onRemove, onWaChange, canRemove, canStar }) {
+  const { t } = useLang();
+  const st = wa?.trials?.[tr.id];
+  const done = !!tr.generated_image;
+  return (
+    <Card as="div" data-testid={`trial-row-${tr.id}`} className="overflow-hidden flex flex-col animate-in fade-in zoom-in-[0.98] duration-300">
+      <div className="relative aspect-[3/4] bg-gray-100">
+        {done ? (
+          <button data-testid={`view-trial-${tr.id}`} onClick={onView} aria-label={t("view")} className="group absolute inset-0">
+            <img src={tr.generated_image} alt={tr.description} loading="lazy" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+            <span className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-gray-950/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Maximize2 size={15} /></span>
+          </button>
+        ) : tr.status === "failed" ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center bg-red-50">
+            <AlertTriangle data-testid={`trial-failed-${tr.id}`} size={26} className="text-red-600" />
+            <p className="text-[13px] text-red-800">{tr.error || t("gen_failed")}</p>
           </div>
-          {purchased && (
-            <div className="space-y-3">
-              <input data-testid="total-value" inputMode="numeric" placeholder={t("total_value")} value={total} onChange={(e) => setTotal(e.target.value)} className="w-full border rounded-lg px-3 py-2.5" />
-              <input data-testid="discount" inputMode="numeric" placeholder={t("discount")} value={discount} onChange={(e) => setDiscount(e.target.value)} className="w-full border rounded-lg px-3 py-2.5" />
-              <input data-testid="final-paid" inputMode="numeric" placeholder={t("final_paid")} value={paid} onChange={(e) => { setPaidEdited(true); setPaid(e.target.value); }} className="w-full border rounded-lg px-3 py-2.5" />
-            </div>
-          )}
-          <button data-testid="confirm-end-session" onClick={submit} disabled={saving} className="w-full bg-[#DC2626] text-white py-3 rounded-lg font-semibold disabled:opacity-50">{saving ? "..." : t("save")}</button>
+        ) : (
+          <div className="absolute inset-0 skeleton rounded-none flex flex-col items-center justify-center gap-2 text-gray-600">
+            <Sparkles size={22} className="text-brand-500 animate-pulse" />
+            <span className="text-xs font-medium">{t("generating_short")}</span>
+          </div>
+        )}
+        {tr.fabric_thumb && <img src={tr.fabric_thumb} alt="fabric" className="absolute left-2 bottom-2 w-10 h-10 rounded-lg object-cover ring-2 ring-white shadow-card" />}
+      </div>
+      <div className="p-3 flex-1 flex flex-col gap-1">
+        <p className="text-sm font-medium text-gray-900 truncate" title={tr.description}>{tr.type || tr.description}</p>
+        {tr.type && tr.description !== tr.type && <p className="text-xs text-gray-600 truncate">{tr.description}</p>}
+        {st?.wa_status && <WaStatus status={st.wa_status} lookNo={st.look_no} error={st.wa_error} />}
+        <div className="mt-auto pt-2 flex items-center gap-1">
+          {done ? <WaTrialActions trial={tr} wa={wa} onChange={onWaChange} canStar={canStar} />
+            : canRemove && <Button data-testid={`retry-trial-${tr.id}`} variant="ghost" size="sm" icon={Trash2} onClick={onRemove} className="-ml-2 text-gray-600">{t("remove")}</Button>}
         </div>
       </div>
-    </div>
+    </Card>
+  );
+}
+
+function CustomerCard({ session, closed, entry, onPhoto, onEnd, canManage }) {
+  const { t } = useLang();
+  return (
+    <Card className="p-4 lg:p-5">
+      <div className="flex gap-4">
+        {entry ? <Avatar className="w-20 h-[104px] lg:w-24 lg:h-32 rounded-xl shrink-0" />
+          : <img src={session.photo} alt="" className="w-20 h-[104px] lg:w-24 lg:h-32 object-cover rounded-xl border border-gray-200 shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2 flex-wrap">
+            <h1 className="text-lg lg:text-xl font-semibold tracking-tight text-gray-900 truncate">{session.customer_name}</h1>
+            {entry && <Badge tone="amber">{t("entry_session")}</Badge>}
+            {closed && <Badge icon={CheckCircle2}>{t("closed")}</Badge>}
+          </div>
+          <p className="text-sm text-gray-600 num mt-0.5">{session.mobile}{session.mobile2 ? ` · ${session.mobile2}` : ""}</p>
+          {!closed && canManage && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {!entry && <Button data-testid="change-photo-btn" variant="secondary" size="sm" icon={RefreshCw} onClick={onPhoto}>{t("change_photo")}</Button>}
+              <Button data-testid="end-session-btn" variant="secondary" size="sm" icon={LogOut} onClick={onEnd}>{t("end_session")}</Button>
+            </div>
+          )}
+          {closed && (
+            <p className="mt-3 text-sm font-medium">
+              {session.purchased ? <span className="text-emerald-700 num">{t("purchased")} · ₹{Number(session.final_paid || 0).toLocaleString("en-IN")}</span>
+                : <span className="text-gray-600">{t("not_purchased")}</span>}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -162,10 +220,13 @@ export default function SessionView({ sessionId, user, onBack }) {
   const [showEnd, setShowEnd] = useState(false);
   const [showCam, setShowCam] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const { info: wa, reload: reloadWa } = useWhatsApp(sessionId, session?.status === "active");
 
-  const load =() => api.get(`/sessions/${sessionId}`).then((r) => { setSession(r.data); setTrials(r.data.trials || []); return r.data; }).catch(() => null);
+  const load = () => api.get(`/sessions/${sessionId}`).then((r) => { setSession(r.data); setTrials(r.data.trials || []); return r.data; }).catch(() => null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [sessionId]);
+  // Warm the fabric catalog so New Try-On search is instant.
+  useEffect(() => { loadCatalog().catch(() => {}); }, []);
 
   // While any try-on is still generating (e.g. after reopening the session),
   // refresh the list so it switches to its image or failed state by itself.
@@ -199,86 +260,84 @@ export default function SessionView({ sessionId, user, onBack }) {
     catch (e) { toast.error(apiErr(e)); }
   };
 
-  if (!session) return <div className="p-8 text-center text-gray-400">...</div>;
-
-  const totalPages = Math.ceil(trials.length / PAGE) || 1;
-  const visible = trials.slice(page * PAGE, page * PAGE + PAGE);
-  const closed = session.status === "closed";
-  const finished = trials.filter((tr) => tr.generated_image);
-
   if (showCam) return <Camera onCapture={changePhoto} onClose={() => setShowCam(false)} />;
 
-  if (!session.photo) {
+  if (!session) {
     return (
-      <>
-        <EntrySession session={session} onAddPhoto={() => setShowCam(true)} onEnd={() => setShowEnd(true)} />
-        {showEnd && <EndSession onClose={() => setShowEnd(false)} onEnd={endSession} />}
-      </>
+      <Page>
+        <div className="grid lg:grid-cols-[320px_1fr] gap-6">
+          <Skeleton className="h-36 lg:h-[460px] rounded-2xl" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="aspect-[3/4] rounded-2xl" />)}</div>
+        </div>
+      </Page>
     );
   }
 
+  const closed = session.status === "closed";
+  const entry = !session.photo;
+  const canTry = can(user, "trials_create");
+  const finished = trials.filter((tr) => tr.generated_image);
+  // Newest first: the look just made is the one staff want.
+  const ordered = [...trials].reverse();
+  const totalPages = Math.ceil(ordered.length / PAGE) || 1;
+  const visible = ordered.slice(page * PAGE, page * PAGE + PAGE);
+
   return (
-    <div className="p-4 pb-28">
-      {/* Customer header */}
-      <div className="bg-white rounded-xl border p-4 flex items-center gap-4 mb-4">
-        <img src={session.photo} alt="" className="w-16 h-20 object-cover rounded-lg border" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900 truncate">{session.customer_name}</p>
-          <p className="text-sm text-gray-500">{session.mobile}{session.mobile2 ? ` · ${session.mobile2}` : ""}</p>
-          {!closed && <button data-testid="change-photo-btn" onClick={() => setShowCam(true)} className="text-xs text-[#1E3A8A] underline mt-1 flex items-center gap-1"><RefreshCw size={12} /> {t("change_photo")}</button>}
+    <Page className="pb-28 lg:pb-9">
+      <div className="grid lg:grid-cols-[320px_minmax(0,1fr)] gap-5 lg:gap-8 items-start">
+        <div className="space-y-4 lg:sticky lg:top-8">
+          <CustomerCard session={session} closed={closed} entry={entry} canManage={can(user, "sessions_manage")} onPhoto={() => setShowCam(true)} onEnd={() => setShowEnd(true)} />
+          <HistoryCard h={session.history} customerId={session.customer_id} onSaved={load} canEdit={can(user, "customers_edit")} />
+          <WaPanel sessionId={sessionId} session={session} wa={wa} finished={finished} onChange={reloadWa} user={user} />
         </div>
-        {!closed && <button data-testid="end-session-btn" onClick={() => setShowEnd(true)} className="text-sm bg-[#DC2626] text-white px-3 py-2 rounded-lg font-medium">{t("end_session")}</button>}
-        {closed && <span className="text-xs text-gray-400 flex items-center gap-1"><CheckCircle2 size={14} /> Closed</span>}
-      </div>
 
-      {/* Trials list */}
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-gray-700">{t("trials")} ({trials.length})</h3>
-        {finished.length > 1 && (
-          <button data-testid="show-all-btn" onClick={() => setShowAll(true)}
-            className="flex items-center gap-1.5 text-sm text-[#1E3A8A] border border-[#1E3A8A]/30 bg-white rounded-lg px-3 py-1.5">
-            <Monitor size={15} /> {t("show_all")}
-          </button>
-        )}
-      </div>
-      <div className="bg-white rounded-xl border divide-y">
-        {visible.length === 0 && <p className="text-center text-gray-400 text-sm py-8">—</p>}
-        {visible.map((tr) => (
-          <div data-testid={`trial-row-${tr.id}`} key={tr.id} className="flex items-center gap-3 p-3">
-            <img src={tr.fabric_thumb} alt="fabric" className="w-12 h-12 object-cover rounded-md border shrink-0" />
-            {tr.generated_image ? (
-              <img src={tr.generated_image} alt="tryon" className="w-12 h-14 object-cover rounded-md border shrink-0" />
-            ) : (
-              <div className="w-12 h-14 rounded-md border shrink-0 flex items-center justify-center bg-gray-50">
-                {tr.status === "failed"
-                  ? <span data-testid={`trial-failed-${tr.id}`} className="text-red-500 text-xl font-bold">!</span>
-                  : <Loader2 className="animate-spin text-gray-400" size={16} />}
+        <div className="min-w-0">
+          {entry ? (
+            !closed && can(user, "sessions_manage") && (
+              <Card>
+                <Empty icon={CamIcon} title={t("add_photo_tryon")} body={t("entry_desc")}
+                  action={<Button data-testid="convert-tryon-btn" icon={CamIcon} size="lg" onClick={() => setShowCam(true)}>{t("capture_photo")}</Button>} />
+              </Card>
+            )
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-xl font-semibold tracking-tight text-gray-900">{t("trials")} <span className="num text-gray-500 font-normal">{trials.length}</span></h2>
+                <div className="flex gap-2">
+                  {finished.length > 1 && <Button data-testid="show-all-btn" variant="secondary" icon={Monitor} onClick={() => setShowAll(true)}>{t("show_all")}</Button>}
+                  {!closed && canTry && <Button data-testid="new-trial-btn" icon={Plus} onClick={() => setShowNewTrial(true)} className="hidden lg:inline-flex">{t("nt_title")}</Button>}
+                </div>
               </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{tr.type}</p>
-              <p className="text-xs text-gray-500 truncate" title={tr.error || ""}>{tr.status === "failed" ? (tr.error || t("gen_failed")) : tr.description}</p>
-            </div>
-            {tr.generated_image
-              ? <button data-testid={`view-trial-${tr.id}`} onClick={() => setPreview(tr)} className="flex items-center gap-1 text-sm text-[#1E3A8A] border border-[#1E3A8A]/30 rounded-lg px-3 py-1.5"><Eye size={15} /> {t("view")}</button>
-              : <button data-testid={`retry-trial-${tr.id}`} onClick={() => removeTrial(tr.id)} className="text-sm text-gray-500 border border-gray-300 rounded-lg px-3 py-1.5">{t("remove")}</button>}
-          </div>
-        ))}
+
+              {trials.length === 0 ? (
+                <Card><Empty icon={Sparkles} title={t("no_tryons_title")} body={t("no_tryons_body")}
+                  action={!closed && canTry && <Button icon={Plus} onClick={() => setShowNewTrial(true)}>{t("nt_title")}</Button>} /></Card>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 lg:gap-4">
+                  {visible.map((tr) => (
+                    <TrialCard key={tr.id} tr={tr} wa={wa} onView={() => setPreview(tr)} onRemove={() => removeTrial(tr.id)} onWaChange={reloadWa}
+                      canRemove={can(user, "trials_delete")} canStar={canTry} />
+                  ))}
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 mt-6">
+                  <IconButton data-testid="trials-prev" icon={ChevronLeft} label="Previous" disabled={page === 0} onClick={() => setPage(page - 1)} className="border border-gray-300 bg-white disabled:opacity-40" />
+                  <span className="text-sm text-gray-600 num">{page + 1} / {totalPages}</span>
+                  <IconButton data-testid="trials-next" icon={ChevronRight} label="Next" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)} className="border border-gray-300 bg-white disabled:opacity-40" />
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 mt-4">
-          <button data-testid="trials-prev" disabled={page === 0} onClick={() => setPage(page - 1)} className="px-4 py-1.5 bg-white border rounded-lg disabled:opacity-40">‹</button>
-          <span className="text-sm text-gray-500">{page + 1} / {totalPages}</span>
-          <button data-testid="trials-next" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)} className="px-4 py-1.5 bg-white border rounded-lg disabled:opacity-40">›</button>
+      {/* Phones: New try-on within thumb reach. */}
+      {!closed && !entry && canTry && (
+        <div className="lg:hidden fixed bottom-0 inset-x-0 z-20 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-canvas via-canvas/90 to-transparent pointer-events-none">
+          <Button data-testid="new-trial-btn-mobile" icon={Plus} size="lg" full onClick={() => setShowNewTrial(true)} className="shadow-lift pointer-events-auto">{t("nt_title")}</Button>
         </div>
-      )}
-
-      {!closed && (
-        <button data-testid="new-trial-btn" onClick={() => setShowNewTrial(true)}
-          className="mt-6 w-full flex items-center justify-center gap-2 bg-[#1E3A8A] text-white py-4 rounded-xl font-semibold hover:bg-[#16306f]">
-          <Plus size={20} /> {t("new_trial")}
-        </button>
       )}
 
       {showNewTrial && <NewTrial sessionId={sessionId} onClose={() => setShowNewTrial(false)} onDone={(tid) => {
@@ -294,6 +353,6 @@ export default function SessionView({ sessionId, user, onBack }) {
       {preview && <PreviewModal trial={preview} onClose={() => setPreview(null)} />}
       {showAll && <ShowAllModal sessionId={sessionId} trials={finished} onClose={() => setShowAll(false)} />}
       {showEnd && <EndSession onClose={() => setShowEnd(false)} onEnd={endSession} />}
-    </div>
+    </Page>
   );
 }
