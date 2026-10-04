@@ -129,6 +129,26 @@ chmod 600 .env      # only root can read the secrets
 > Try-on images are generated with OpenAI’s image API, billed to your own OpenAI
 > account. Make sure billing is set up at <https://platform.openai.com/settings/organization/billing>.
 
+**WhatsApp (optional, can be done later).** `env.example` also has these lines.
+Leave `WHATSAPP_ENABLED=false` until you have followed
+[docs/whatsapp-setup.md](docs/whatsapp-setup.md). With it off, the app works
+without WhatsApp.
+
+| Key | Value |
+|---|---|
+| `WHATSAPP_ENABLED` | `false` until setup is done, then `true` |
+| `WHATSAPP_GRAPH_VERSION` | `v23.0` (Meta Graph API version) |
+| `WHATSAPP_TOKEN` | permanent System User token (setup guide step 8) |
+| `WHATSAPP_PHONE_NUMBER_ID` | from WhatsApp → API Setup (step 9) |
+| `WHATSAPP_WABA_ID` | WhatsApp Business Account ID (step 9) |
+| `WHATSAPP_APP_SECRET` | App settings → Basic → App secret (step 9) |
+| `WHATSAPP_VERIFY_TOKEN` | any random word you choose; typed again in the webhook setup |
+| `WHATSAPP_APP_ID` | App ID; only needed for image templates |
+| `PUBLIC_BASE_URL` | `https://somanifabs.com` (used for review/map links) |
+
+This release also adds a `/r/` block to `deploy/nginx-site.conf`. On an existing
+droplet, copy it again (setup guide step 10).
+
 ---
 
 ## STEP 5 — First launch (5 min)

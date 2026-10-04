@@ -3,12 +3,9 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package.json yarn.lock ./
-# Emergent-only dev package: not needed for a production build.
-RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));if(p.devDependencies)delete p.devDependencies['@emergentbase/visual-edits'];fs.writeFileSync('package.json',JSON.stringify(p,null,2));" \
-    && yarn install --network-timeout 600000
+RUN yarn install --network-timeout 600000
 
 COPY . .
-RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));if(p.devDependencies)delete p.devDependencies['@emergentbase/visual-edits'];fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
 
 # Empty value = the frontend calls /api on the same domain (nginx proxies it).
 ARG REACT_APP_BACKEND_URL=""

@@ -1,5 +1,5 @@
 # Production dependencies only (used by the Docker image on your own server).
-# Dev/test tools and Emergent-only packages are intentionally excluded.
+# Dev/test tools are intentionally excluded.
 fastapi==0.110.1
 uvicorn[standard]==0.25.0
 motor==3.3.1
@@ -14,3 +14,5 @@ pandas>=2.2
 openpyxl>=3.1.5
 openai>=1.99.0
 pillow>=10.4
+httpx>=0.27
+qrcode>=7.4

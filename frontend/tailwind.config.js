@@ -12,7 +12,15 @@ module.exports = {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)'
       },
+      // Admin app design tokens (see docs/design-system.md). One accent: the
+      // Countr OS green from the logo. 500 = logo green, 700 = buttons/links
+      // (white text stays readable), 900 = logo ink.
       colors: {
+        brand: {
+          50: '#ECFBF1', 100: '#D2F5DE', 200: '#A6EBBF', 300: '#6EDC96', 400: '#3DCB6F',
+          500: '#1BC152', 600: '#04AE3E', 700: '#007F47', 800: '#046539', 900: '#063424', 950: '#04241A'
+        },
+        canvas: '#F5F7F6',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -54,7 +62,17 @@ module.exports = {
           '5': 'hsl(var(--chart-5))'
         }
       },
+      fontFamily: {
+        ui: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"Geist Mono"', 'ui-monospace', 'monospace']
+      },
+      boxShadow: {
+        card: '0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.04)',
+        lift: '0 1px 2px rgba(16, 24, 40, 0.05), 0 12px 32px -12px rgba(6, 52, 36, 0.20)',
+        pop: '0 24px 64px -16px rgba(16, 24, 40, 0.28)'
+      },
       keyframes: {
+        shimmer: { '100%': { transform: 'translateX(100%)' } },
         'accordion-down': {
           from: {
             height: '0'

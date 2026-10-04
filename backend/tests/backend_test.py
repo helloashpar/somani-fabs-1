@@ -10,7 +10,7 @@ import pytest
 import requests
 from PIL import Image
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://unstitched-tryon-app.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 API = f"{BASE_URL}/api"
 
 SUPER_USER = "superashwini"
@@ -77,7 +77,10 @@ class TestConfig:
             assert needed in labels, f"missing category {needed}"
         for c in cats:
             assert "slots" in c
-            assert "items" in c and len(c["items"]) >= 1
+            if c["kind"] == "single":
+                assert c["position"] in ("top", "bottom", "third") and len(c["items"]) >= 1
+            else:
+                assert c["kind"] == "group" and len(c["members"]) >= 1
 
 
 # ---------- Admin management ----------
