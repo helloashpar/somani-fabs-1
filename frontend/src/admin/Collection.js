@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { Plus, Search, X, Camera as CamIcon, ImagePlus, Trash2, Loader2, Images, Layers } from "lucide-react";
+import { Plus, Search, X, Camera as CamIcon, ImagePlus, Trash2, Loader2, Layers } from "lucide-react";
 import Camera from "@/admin/Camera";
 import { FabricThumb } from "@/admin/FabricSearch";
 import { loadCatalog, invalidateCatalog, searchCatalog, catalogCategories, singleCategories, loadCategories, fileToSquareJpeg, thumbUrl } from "@/lib/catalog";
@@ -16,9 +16,6 @@ export default function Collection() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [editing, setEditing] = useState(null); // item, or {} for new
-  const [bulk, setBulk] = useState(null); // { done, total }
-  const [bulkCat, setBulkCat] = useState(null); // category picked for "Add many photos"
-  const bulkRef = useRef(null);
 
   const reload = () => { invalidateCatalog(); return loadCatalog({ force: true }).then(setItems).catch((e) => toast.error(apiErr(e))); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -30,50 +27,15 @@ export default function Collection() {
   const chips = useMemo(() => catalogCategories(items || []), [items]);
   const shown = useMemo(() => searchCatalog(items || [], q, cat), [items, q, cat]);
 
-  // Many photos at once: each becomes a fabric named after its file, to be
-  // filled in later. Names already in the catalog are skipped.
-  const onBulk = async (e) => {
-    const files = [...(e.target.files || [])];
-    e.target.value = "";
-    if (!files.length) return;
-    const catId = bulkCat;
-    setBulkCat(null);
-    let ok = 0; const failed = [];
-    setBulk({ done: 0, total: files.length });
-    for (const [i, f] of files.entries()) {
-      const name = f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || `Fabric ${i + 1}`;
-      try {
-        const image = await fileToSquareJpeg(f);
-        await api.post("/catalog", { name, image, category_id: catId });
-        ok += 1;
-      } catch (err) { failed.push(`${name}: ${apiErr(err)}`); }
-      setBulk({ done: i + 1, total: files.length });
-    }
-    setBulk(null);
-    if (ok) toast.success(`${ok} ${t("cat_added_n")}`);
-    if (failed.length) toast.error(failed.slice(0, 3).join("\n") + (failed.length > 3 ? `\n+${failed.length - 3}` : ""));
-    reload();
-  };
-
   return (
     <div>
       <div className="flex items-start justify-between gap-3 mb-4">
         <p className="text-sm text-gray-600 pt-2">{t("cat_sub")}</p>
         <div className="flex gap-2 shrink-0">
-          <input ref={bulkRef} type="file" accept="image/*" multiple className="hidden" onChange={onBulk} data-testid="catalog-bulk-input" />
-          <button data-testid="catalog-bulk-btn" onClick={() => setBulkCat("")} disabled={!!bulk} title={t("cat_bulk")}
-            className="flex items-center gap-1.5 h-10 text-sm font-medium border border-gray-300 bg-white rounded-xl px-3 text-gray-800 hover:bg-gray-50 disabled:opacity-50"><Images size={16} /><span className="hidden sm:inline">{t("cat_bulk")}</span></button>
           <button data-testid="catalog-add-btn" onClick={() => setEditing({})}
             className="flex items-center gap-1.5 h-10 text-sm bg-brand-700 hover:bg-brand-800 text-white rounded-xl px-3.5 font-medium"><Plus size={16} /> {t("add")}</button>
         </div>
       </div>
-
-      {bulk && (
-        <div className="mb-3 rounded-xl bg-brand-50 text-brand-700 text-sm px-3 py-2.5 flex items-center gap-2">
-          <Loader2 size={16} className="animate-spin" /> {t("cat_uploading")} {bulk.done}/{bulk.total}
-          <span className="flex-1 h-1.5 bg-white rounded-full overflow-hidden ml-2"><span className="block h-full bg-brand-700 transition-all" style={{ width: `${(bulk.done / bulk.total) * 100}%` }} /></span>
-        </div>
-      )}
 
       <div className="flex items-center gap-2 bg-white border rounded-xl px-3 h-11 mb-2 focus-within:ring-2 focus-within:ring-brand-700/20">
         <Search size={17} className="text-gray-400" />
@@ -124,20 +86,6 @@ export default function Collection() {
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />
       )}
 
-      {bulkCat !== null && (
-        <div className="fixed inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center animate-in fade-in duration-150" onClick={() => setBulkCat(null)}>
-          <div data-testid="bulk-sheet" onClick={(e) => e.stopPropagation()} className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3 animate-in slide-in-from-bottom-8 duration-200">
-            <h3 className="font-semibold">{t("cat_bulk")}</h3>
-            <p className="text-sm text-gray-500">{t("cat_bulk_sub")}</p>
-            <CategorySelect cats={cats} value={bulkCat} onChange={setBulkCat} />
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button onClick={() => setBulkCat(null)} className="py-2.5 rounded-lg border">{t("cancel")}</button>
-              <button data-testid="bulk-choose-photos" disabled={!bulkCat} onClick={() => bulkRef.current?.click()}
-                className="py-2.5 rounded-lg bg-brand-700 text-white font-medium disabled:opacity-40">{t("cat_choose_photos")}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

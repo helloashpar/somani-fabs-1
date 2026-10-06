@@ -44,7 +44,7 @@ export function WaStatus({ status, lookNo, error }) {
 }
 
 // Star + "Send to WhatsApp" buttons for one finished try-on.
-export function WaTrialActions({ trial, wa, onChange, canStar = true }) {
+export function WaTrialActions({ trial, wa, onChange, canStar = true, dark = false }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
   const st = wa?.trials?.[trial.id] || {};
@@ -68,13 +68,13 @@ export function WaTrialActions({ trial, wa, onChange, canStar = true }) {
   return (
     <>
       <button data-testid={`star-trial-${trial.id}`} onClick={toggleStar} disabled={!canStar} aria-label={t("wa_star")} aria-pressed={!!starred} title={t("wa_star")}
-        className={`w-9 h-9 -ml-1.5 inline-flex items-center justify-center rounded-xl transition-colors active:scale-95 ${starred ? "text-amber-500 hover:bg-amber-50" : "text-gray-400 hover:text-gray-700 hover:bg-gray-100"}`}>
-        <Star size={18} fill={starred ? "currentColor" : "none"} />
+        className={`${dark ? "w-12 h-12 bg-white/10" : "w-10 h-10 -ml-2"} inline-flex items-center justify-center rounded-xl transition-colors active:scale-95 ${starred ? "text-amber-400" : dark ? "text-white" : "text-gray-500 hover:text-gray-800 hover:bg-gray-100"}`}>
+        <Star size={dark ? 22 : 19} fill={starred ? "currentColor" : "none"} />
       </button>
       {canSend && !done && (
         <button data-testid={`wa-send-${trial.id}`} onClick={send} disabled={busy} aria-label={t("wa_send")} title={t("wa_send")}
-          className="ml-auto h-9 px-3 inline-flex items-center gap-1.5 rounded-xl text-sm font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-colors active:scale-[0.97] disabled:opacity-50">
-          {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="hidden sm:inline">{t("wa_send_short")}</span>
+          className={`ml-auto ${dark ? "h-12 px-5 bg-emerald-600 text-white hover:bg-emerald-700" : "h-10 px-3 text-emerald-800 bg-emerald-50 hover:bg-emerald-100"} inline-flex items-center gap-1.5 rounded-xl text-sm font-medium transition-colors active:scale-[0.97] disabled:opacity-50`}>
+          {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} aria-hidden="true" />}<span className={dark ? "" : "hidden sm:inline"}>{t("wa_send_short")}</span>
         </button>
       )}
     </>

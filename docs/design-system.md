@@ -65,25 +65,28 @@ No uppercase letter-spaced "eyebrow" labels above headings.
 
 - **Radius rule:** cards, sheets, tiles and images = `rounded-2xl`; buttons and inputs = `rounded-xl`; badges, chips and avatars = `rounded-full`.
 - **Spacing:** page padding comes from `Page` (`px-4 py-5` on phones, `lg:px-10 lg:py-9`). Gaps between cards `gap-3 lg:gap-4`. Card padding `p-4` / `p-5`.
-- **Heights:** inputs and medium buttons `h-11` (44px touch target), small buttons `h-9`, large `h-12`.
+- **Heights:** inputs `h-12` on phones (`h-11` from `sm`) with 16px text so iOS does not zoom on focus; medium buttons and icon buttons `h-11` (44px touch target), small `h-9`, large `h-12`, sheet footers `xl` (`h-14`).
 - **Shadows:** `shadow-card` on resting cards, `shadow-lift` on hover / floating actions, `shadow-pop` on sheets and menus. Borders are `border-gray-200/80`.
 
 ## 5. Layout and navigation
 
-- **Desktop (`lg`, 1024px+):** fixed left sidebar (256px).
-  - **Live Shop** comes first and stands apart: a large filled button with a pulsing live dot. It is the day-to-day work screen (sessions on the shop floor); everything else is secondary.
-  - Then *Insights* (Statistics, Customer Database, Session History) and *Setup* (Catalog, Admins, Marketing, More Settings), filtered by the admin's permissions.
-  - The user (name and role) and logout sit at the bottom. There is no language picker here: the language is a shop setting (More Settings > Language).
-- **Phones and tablets:** sticky top bar (back arrow, page title, settings, logout). Settings shows a horizontal tab strip; its ‹ › arrows **slide the strip**, tapping a tab opens it.
-- **Three levels, always shown the same way** (`ui.js`):
-  1. **Area**: sidebar item / phone tab (e.g. Marketing). Header: `PageHeader`.
-  2. **Hub tile** (e.g. WhatsApp): `HubPage` shows tiles; opening one shows a `SubHeader`: back button, breadcrumb "Marketing › WhatsApp", then the title with its icon.
-  3. **Sections** inside it (e.g. Connection, Templates): `UnderlineTabs` directly under the SubHeader. Never pills for navigation.
-  Content cards below do not repeat the section name as their title.
-- **Main action within thumb reach:** on phones, the primary action of a screen (New Session, New Try-On) is a full-width button fixed to the bottom. On desktop it sits in the page header.
-- **Session page:** desktop has two columns (customer, history and WhatsApp on the left at 320px; try-on gallery on the right). Phones stack them.
-- **Language:** one shop-wide setting stored on the server, applied at sign-in for everyone. The public home page is always English.
+- **Every screen has a URL** (`/admin`, `?p=reports`, `?p=customers`, `?p=more`, `?p=more&g=<group>`, `?p=more&i=<item>`, `?s=<session>`), so the phone's back button and gesture work and screens can be linked. Navigate with `go()` from `AdminApp.js`; never keep the current screen only in component state.
+- **Phones (below `lg`):** a fixed **bottom tab bar** with at most five slots: Shop, Reports, **＋ New session** (centre, filled), Customers, More. Tabs the admin may not use are left out. A slim top bar shows the wordmark, or a back arrow and the title on sub-screens.
+- **Desktop (`lg`, 1024px+):** fixed left sidebar (256px): wordmark, **New session** button, then Live Shop, Reports, Customers, then the four Setup groups (Catalog, Marketing, Shop setup, Team). User and logout at the bottom.
+- **Setup has three levels:** group → its settings → one setting. On phones, More lists the groups (each row names what is inside), then Account with Logout (red, kept apart from everyday actions). A group opens a list of its settings (`MenuGroup` / `MenuRow`); desktop shows the same group as a header and `Tiles`. A setting opens its own screen; phones show the group above its title in the top bar, desktop shows `Crumbs` (back + "Group > Setting"). Back always goes up one level. Groups and settings live in `GROUPS` / `MORE_ITEMS` in `admin/More.js`; a group is hidden when the admin may open none of its settings.
+- **Reports** = statistics and session history for one period. One range picker (Today / 7 days / 30 days / All, custom dates behind the calendar button) drives both.
+- **Session screen (phones):** its own top bar with the customer's name, a compact customer header (tap the photo to retake it; "Details" folds out the history card), the try-on gallery straight after, WhatsApp below. A `BottomBar` holds **Finish** and **New try-on**. Desktop: details left (320px), gallery right.
+- **Main action within thumb reach:** on phones the primary action sits in the bottom bar (or the ＋ tab); on desktop in the page header or sidebar. Do not repeat it inside the page on phones.
 - **Multi-column layouts** must say what happens below `lg` / `sm` in the same component.
+
+### Fewer taps: rules the flows follow
+
+- The camera hands the photo back at once (`<Camera confirm={false}>`) wherever the next screen offers Retake.
+- New session: mobile number first; a returning customer fills everything with one tap; Enter on the name starts the session. Second mobile, birthday and optional fields sit under "More details". Customers > profile has **Start session** too.
+- New try-on: recent fabrics are one tap; tapping a try-on type opens the camera directly. **Generate closes the sheet at once**: the look shows as "generating" in the gallery and opens full screen when ready (or a toast with View if something else is open).
+- Full-screen look: swipe or arrows move between looks (the shop screen follows); star and WhatsApp send work there.
+- Finish: "Didn't buy" closes the session in one tap; "Bought" asks only for the bill (discount optional, final amount computed).
+- Live Shop refreshes itself every 15 seconds while visible; Today's summary is one tap into Reports.
 
 ## 6. Components (`admin/ui.js`)
 
@@ -95,12 +98,15 @@ No uppercase letter-spaced "eyebrow" labels above headings.
 | `Button` | `primary` (one per area), `secondary`, `ghost`, `soft`, `danger`, `dangerSoft`, `success`; sizes `sm` / `md` / `lg`; `icon`, `loading`, `full` |
 | `IconButton` | Icon-only actions. Always pass `label` (it becomes the accessible name) |
 | `Field` + `inputCls` / `selectCls` | Label above input, hint or error below |
-| `Sheet` | **Every form and detail pop-up.** Bottom sheet on phones, dialog from `sm`. Sizes `sm` / `md` / `lg` / `xl`. Put the main button in `footer`. `locked` while saving |
+| `Sheet` | **Every form and detail pop-up.** Bottom sheet on phones (swipe down on the header to close), dialog from `sm`. Sizes `sm` / `md` / `lg` / `xl`. Put the main button in `footer` (`size="xl"`). `locked` while saving |
+| `BottomBar` | Phones only: the screen's main actions fixed above the home indicator. Add bottom padding to the page |
+| `MenuGroup`, `MenuRow` | Grouped settings-style lists (More). `tone="danger"` for Logout |
 | `Segmented` | 2 to 5 mutually exclusive options (date ranges, yes/no, types) |
 | `Toggle` | On/off settings that save immediately |
 | `Badge` | Status and small facts. Tones: `gray`, `brand`, `green`, `amber`, `red`, `pink`, `sky` |
 | `Stat` | One number with a label (Statistics, KPIs) |
-| `HubPage` (`Tiles`, `SubHeader`) | **Hub screens**: Catalog, Marketing, More Settings. One tile per area; a tile opens its screen under a `SubHeader` (back + breadcrumb) |
+| `Crumbs` | Desktop back button + breadcrumb above a setting screen |
+| `HubPage` (`Tiles`, `SubHeader`) | Legacy hub screens. New setup screens go into `MORE_ITEMS` in `admin/More.js` instead (`Tiles` is still used for group pages on desktop) |
 | `UnderlineTabs` | Sections inside a hub screen (level 3) |
 | `Empty` | Empty states: icon, short title, one sentence, the action that fills it |
 | `Skeleton` | Loading placeholders shaped like the final content (no spinners for page loads) |
