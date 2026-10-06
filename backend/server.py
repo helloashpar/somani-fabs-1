@@ -513,13 +513,17 @@ async def customer_stats(customer_id):
     sessions = await db.sessions.find({"customer_id": customer_id}, {"_id": 0, "photo": 0, "thumb": 0}).to_list(1000)
     purchased = [s for s in sessions if s.get("purchased")]
     starts = [s["start_time"] for s in sessions if s.get("start_time")]
+    bought_on = [s["start_time"] for s in purchased if s.get("start_time")]
     return {
         "total_sessions": len(sessions),
         "purchased_count": len(purchased),
         "not_purchased_count": len([s for s in sessions if s.get("status") == "closed" and not s.get("purchased")]),
         "total_collected": sum(float(s.get("final_paid") or 0) for s in purchased),
         "total_discount": sum(float(s.get("discount") or 0) for s in purchased),
+        "total_value": sum(float(s.get("total_value") or 0) for s in purchased),
         "first_visit": min(starts) if starts else None,
+        # A customer "since" their first paid purchase, not their first visit.
+        "first_purchase": min(bought_on) if bought_on else None,
         "last_visit": max(starts) if starts else None,
     }
 
@@ -544,7 +548,13 @@ async def bulk_customer_stats():
                 "$sum": {"$cond": [
                     {"$eq": ["$purchased", True]},
                     {"$toDouble": {"$ifNull": ["$discount", 0]}}, 0]}},
+            "total_value": {
+                "$sum": {"$cond": [
+                    {"$eq": ["$purchased", True]},
+                    {"$toDouble": {"$ifNull": ["$total_value", 0]}}, 0]}},
             "first_visit": {"$min": "$start_time"},
+            # $min skips nulls, so only purchased visits count.
+            "first_purchase": {"$min": {"$cond": [{"$eq": ["$purchased", True]}, "$start_time", None]}},
             "last_visit": {"$max": "$start_time"},
         }},
     ]
@@ -555,7 +565,8 @@ async def bulk_customer_stats():
 
 
 EMPTY_STATS = {"total_sessions": 0, "purchased_count": 0, "not_purchased_count": 0,
-               "total_collected": 0, "total_discount": 0, "first_visit": None, "last_visit": None}
+               "total_collected": 0, "total_discount": 0, "total_value": 0,
+               "first_visit": None, "first_purchase": None, "last_visit": None}
 
 
 def ist_date_text(value) -> str:
@@ -587,7 +598,7 @@ async def custom_field_labels() -> List[str]:
 
 async def attach_customer_history(sessions: List[Dict[str, Any]]):
     """Add `history` to each session: what staff should know about the customer
-    (visits, purchases, revenue, previous visit, birthday), in place."""
+    (visits, purchases, revenue, previous visit, customer since, birthday), in place."""
     cids = list({s["customer_id"] for s in sessions if s.get("customer_id")})
     if not cids:
         return
@@ -608,6 +619,8 @@ async def attach_customer_history(sessions: List[Dict[str, Any]]):
             "not_purchased": len([v for v in vs if v.get("status") == "closed" and not v.get("purchased")]),
             "revenue": sum(float(v.get("final_paid") or 0) for v in bought),
             "last_visit": max(earlier) if earlier else None,
+            # First paid purchase: the day they became a customer.
+            "since": min((v["start_time"] for v in bought if v.get("start_time")), default=None),
             "dob": c.get("dob"),
         }
 
@@ -667,11 +680,11 @@ async def export_customers(user=Depends(get_current_user)):
             "Name": c.get("name"), "Primary Mobile": c.get("mobile"),
             "Secondary Mobile": c.get("mobile2", ""),
             "Date of Birth": dob_text(c.get("dob")), "Age": dob_age(c.get("dob")),
-            "Customer Since": ist_date_text(c.get("created_at")),
+            "Customer Since": ist_date_text(st["first_purchase"]),
             "First Visit": ist_date_text(st["first_visit"]), "Last Visit": ist_date_text(st["last_visit"]),
-            "Visits": st["total_sessions"], "Bought": st["purchased_count"],
-            "Not Bought": st["not_purchased_count"], "Total Revenue": st["total_collected"],
-            "Total Discount": st["total_discount"],
+            "Visits": st["total_sessions"], "Purchased": st["purchased_count"],
+            "Not Purchased": st["not_purchased_count"], "Total Revenue": st["total_collected"],
+            "Total Discount": st["total_discount"], "Total Value": st["total_value"],
             "WhatsApp": "Unsubscribed" if wa.get("opted_out") else "Agreed" if wa.get("opted_in") else "",
         }
         extra = c.get("extra") or {}

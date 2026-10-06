@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700;800;900&family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Rozha+One&family=Mukta:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700;800;900&family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -44,6 +44,9 @@ body {
 .font-display { font-family: 'Playfair Display', serif; }
 .font-body { font-family: 'Outfit', sans-serif; }
 .font-admin { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.006em; }
+/* Admin app on phones: no grey tap flash, no double-tap zoom delay on controls. */
+.font-admin { -webkit-tap-highlight-color: transparent; }
+.font-admin button, .font-admin a, .font-admin input, .font-admin select, .font-admin label { touch-action: manipulation; }
 .font-admin .num, .num { font-variant-numeric: tabular-nums; }
 /* Admin focus ring: visible for keyboard users, invisible for taps. */
 .font-admin :focus-visible { outline: 2px solid #1BC152; outline-offset: 2px; border-radius: 10px; }
@@ -56,15 +59,61 @@ body {
   .font-admin *, .font-admin *::before, .font-admin *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
 
-/* heritage helpers */
-.hero-overlay { background: linear-gradient(to bottom, rgba(0,0,0,0.35), rgba(0,0,0,0.6)); }
-.glass { backdrop-filter: blur(18px); background: rgba(253,251,247,0.78); }
+/* Public landing page (src/pages/Landing.js). Light only, scoped so the
+   admin theme is untouched. Palette: crimson #880D1E (actions), rose
+   #DD2D4A (display highlight), flamingo #F26A8D (ornament), blush #F49CBB
+   and aqua #CBEEF3 (surfaces). Rozha One + Mukta both carry Devanagari. */
+.sf {
+  color-scheme: light;
+  --sf-bg: #FFF8FA;
+  --sf-card: #FFFFFF;
+  --sf-ink: #3E0710;
+  --sf-muted: #73414B;
+  --sf-line: rgba(136, 13, 30, 0.12);
+  --sf-crimson: #880D1E;
+  --sf-crimson-press: #6C0A18;
+  --sf-rose: #DD2D4A;
+  --sf-flamingo: #F26A8D;
+  --sf-blush: #F49CBB;
+  --sf-blush-soft: #FDE6EE;
+  --sf-aqua: #CBEEF3;
+  --sf-aqua-soft: #EAF8FA;
+  background: var(--sf-bg);
+  color: var(--sf-ink);
+  font-family: 'Mukta', ui-sans-serif, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.sf-display { font-family: 'Rozha One', 'Mukta', Georgia, serif; font-weight: 400; }
+.sf :focus-visible { outline: 3px solid var(--sf-rose); outline-offset: 3px; }
+.sf ::selection { background: var(--sf-crimson); color: #fff; }
+.sf a, .sf button { touch-action: manipulation; }
 
-@keyframes fadeUp { from { opacity:0; transform: translateY(18px);} to {opacity:1; transform:none;} }
-.fade-up { animation: fadeUp .7s ease both; }
+/* Jharokha (Rajasthani window) arch used to frame photos. */
+.sf-arch { border-radius: 999px 999px 24px 24px; }
 
-@keyframes marquee { from { transform: translateX(0);} to { transform: translateX(-50%);} }
-.marquee { animation: marquee 28s linear infinite; }
+/* Leheriya-style diagonal stripe ribbon. */
+.sf-leheriya {
+  height: 10px;
+  background: repeating-linear-gradient(-45deg,
+    var(--sf-crimson) 0 8px, var(--sf-flamingo) 8px 16px, var(--sf-aqua) 16px 22px);
+}
+
+/* Receipt card with a scalloped bottom edge. */
+.sf-receipt {
+  -webkit-mask: radial-gradient(circle 10px at 50% 100%, #0000 97%, #000) 50% / 24px 100%;
+          mask: radial-gradient(circle 10px at 50% 100%, #0000 97%, #000) 50% / 24px 100%;
+  padding-bottom: 3.5rem;
+}
+
+@keyframes sf-marquee { to { transform: translateX(-50%); } }
+@keyframes sf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: no-preference) {
+  .sf-marquee { animation: sf-marquee 32s linear infinite; }
+  .sf-spin { animation: sf-spin 24s linear infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sf-marquee-wrap { overflow-x: auto; }
+}
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

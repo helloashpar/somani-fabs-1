@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { RefreshCw, Download, Loader2, AlertTriangle, ExternalLink, MessageCircle } from "lucide-react";
-import { Badge, HubPage, UnderlineTabs } from "@/admin/ui";
+import { RefreshCw, Download, Loader2, AlertTriangle, ExternalLink } from "lucide-react";
+import { UnderlineTabs } from "@/admin/ui";
 
 // Super admin only (the backend enforces it too). Template text is fixed in
 // backend/whatsapp_templates.py and only previewed here.
@@ -337,21 +337,11 @@ function WhatsAppSettings({ config, reload }) {
   );
 }
 
-// Settings -> Marketing: one tile per channel. WhatsApp is the first; more
-// channels become more tiles here.
-export default function Marketing({ isSuper, title, subtitle }) {
-  const { t } = useLang();
+// More > WhatsApp (marketing_manage; the backend enforces it too).
+export function WhatsAppScreen() {
   const [config, setConfig] = useState(null);
   const load = () => api.get("/whatsapp/config").then((r) => setConfig(r.data)).catch((e) => toast.error(apiErr(e)));
-  useEffect(() => { if (isSuper) load(); }, [isSuper]);
-  if (!isSuper) return <p className="text-center text-gray-600 py-10 text-sm">{t("super_only")}</p>;
+  useEffect(() => { load(); }, []);
   if (!config) return <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-gray-500" /></div>;
-  return (
-    <HubPage title={title} subtitle={subtitle} testid="marketing"
-      tiles={[{
-        id: "whatsapp", icon: MessageCircle, title: "WhatsApp", sub: t("tile_whatsapp_sub"),
-        meta: config.enabled ? <Badge tone="green">{t("mk_connected")}</Badge> : <Badge tone="amber">{t("mk_not_connected_short")}</Badge>,
-      }]}
-      render={() => <WhatsAppSettings config={config} reload={load} />} />
-  );
+  return <WhatsAppSettings config={config} reload={load} />;
 }

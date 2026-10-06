@@ -22,7 +22,9 @@ function crop(source, sw, sh, { w, h }) {
 
 // Full-screen camera. mode="person" is a normal photo; mode="fabric" shows a
 // square guide. No checks or warnings: staff can always take the photo.
-export default function Camera({ onCapture, onClose, mode = "person" }) {
+// `confirm={false}` hands the photo back the moment it is taken (the screen
+// that opened the camera offers Retake), which saves a tap per photo.
+export default function Camera({ onCapture, onClose, mode = "person", confirm = true }) {
   const { t } = useLang();
   const size = MODES[mode] || MODES.person;
   const videoRef = useRef(null);
@@ -49,10 +51,13 @@ export default function Camera({ onCapture, onClose, mode = "person" }) {
     if (!shot && stream && videoRef.current) videoRef.current.srcObject = stream;
   }, [stream, shot]);
 
+  const done = (img) => { stream?.getTracks().forEach((tr) => tr.stop()); onCapture(img); };
+  const take = (img) => { navigator.vibrate?.(10); if (confirm) setShot(img); else done(img); };
+
   const capture = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
-    setShot(crop(v, v.videoWidth, v.videoHeight, size));
+    take(crop(v, v.videoWidth, v.videoHeight, size));
   };
 
   const onFile = (e) => {
@@ -61,12 +66,12 @@ export default function Camera({ onCapture, onClose, mode = "person" }) {
     if (!f) return;
     const url = URL.createObjectURL(f);
     const img = new Image();
-    img.onload = () => { setShot(crop(img, img.naturalWidth, img.naturalHeight, size)); URL.revokeObjectURL(url); };
+    img.onload = () => { take(crop(img, img.naturalWidth, img.naturalHeight, size)); URL.revokeObjectURL(url); };
     img.onerror = () => URL.revokeObjectURL(url);
     img.src = url;
   };
 
-  const use = () => { stream?.getTracks().forEach((tr) => tr.stop()); onCapture(shot); };
+  const use = () => done(shot);
 
   // Largest box with the output's shape that fits the available space.
   const areaRef = useRef(null);
@@ -81,14 +86,14 @@ export default function Camera({ onCapture, onClose, mode = "person" }) {
   const frame = { width: size.w * scale, height: size.h * scale };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none">
+    <div className="fixed inset-0 z-[60] bg-black flex flex-col select-none pt-[env(safe-area-inset-top)]">
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" data-testid="camera-file-input" />
 
       <div className="flex items-center justify-between px-2 py-2">
-        <button data-testid="camera-close-btn" onClick={onClose} aria-label="Close" className="p-3 text-white"><X size={24} /></button>
+        <button data-testid="camera-close-btn" onClick={onClose} aria-label="Close" className="w-12 h-12 flex items-center justify-center text-white rounded-full active:bg-white/10"><X size={24} /></button>
         {!shot && stream && (
           <button data-testid="camera-flip-btn" onClick={() => setFacing(facing === "environment" ? "user" : "environment")}
-            aria-label="Switch camera" className="p-3 text-white"><SwitchCamera size={22} /></button>
+            aria-label="Switch camera" className="w-12 h-12 flex items-center justify-center text-white rounded-full active:bg-white/10"><SwitchCamera size={22} /></button>
         )}
       </div>
 
@@ -124,19 +129,19 @@ export default function Camera({ onCapture, onClose, mode = "person" }) {
 
       {/* Controls */}
       {shot ? (
-        <div className="grid grid-cols-2 gap-3 p-4 pb-8">
+        <div className="grid grid-cols-2 gap-3 p-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
           <button data-testid="retake-btn" onClick={() => (stream ? setShot(null) : fileRef.current?.click())}
             className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white/10 text-white font-medium"><RotateCcw size={18} /> {t("retake")}</button>
           <button data-testid="use-photo-btn" onClick={use}
             className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-white text-black font-semibold"><Check size={18} /> {t("use_photo")}</button>
         </div>
       ) : (
-        <div className="grid grid-cols-3 items-center px-6 py-5 pb-9">
+        <div className="grid grid-cols-3 items-center px-6 py-5 pb-[max(2.25rem,env(safe-area-inset-bottom))]">
           <button data-testid="upload-photo-btn" onClick={() => fileRef.current?.click()} aria-label={t("cam_upload")}
             className="justify-self-start w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center"><Upload size={20} /></button>
           <button data-testid="shutter-btn" onClick={capture} disabled={!stream} aria-label="Capture"
-            className="justify-self-center w-[72px] h-[72px] rounded-full border-4 border-white flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform">
-            <span className="w-[56px] h-[56px] rounded-full bg-white" />
+            className="justify-self-center w-20 h-20 rounded-full border-4 border-white flex items-center justify-center disabled:opacity-30 active:scale-90 transition-transform touch-manipulation">
+            <span className="w-16 h-16 rounded-full bg-white" />
           </button>
           <span />
         </div>

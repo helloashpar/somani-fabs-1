@@ -21,12 +21,13 @@ export function FabricThumb({ item, size = 48, className = "" }) {
 }
 
 // Full-screen fabric picker. Opens with the keyboard up; every keystroke
-// filters the whole catalog instantly in the browser.
-export default function FabricSearch({ onPick, onClose, onCamera, pickedIds = [], replaceHint }) {
+// filters the whole catalog instantly in the browser. `onlyCat` locks it to
+// one category (a try-on part): only that category's fabrics are shown.
+export default function FabricSearch({ onPick, onClose, onCamera, pickedIds = [], replaceHint, onlyCat = "" }) {
   const { t } = useLang();
   const [items, setItems] = useState(cachedCatalog());
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState("");
+  const [cat, setCat] = useState(onlyCat);
   const [limit, setLimit] = useState(PAGE);
   const inputRef = useRef(null);
   const listRef = useRef(null);
@@ -37,14 +38,14 @@ export default function FabricSearch({ onPick, onClose, onCamera, pickedIds = []
   useEffect(() => { setLimit(PAGE); listRef.current?.scrollTo({ top: 0 }); }, [q, cat]);
 
   const words = useMemo(() => q.toLowerCase().split(/\s+/).filter(Boolean), [q]);
-  const cats = useMemo(() => catalogCategories(items || []), [items]);
+  const cats = useMemo(() => (onlyCat ? [] : catalogCategories(items || [])), [items, onlyCat]);
   const results = useMemo(() => searchCatalog(items || [], q, cat), [items, q, cat]);
   const catHits = useMemo(() => (words.length && !cat
     ? cats.filter((c) => words.every((w) => c.name.toLowerCase().includes(w))) : []), [cats, words, cat]);
   const recent = useMemo(() => {
-    if (q || cat || !items) return [];
+    if (q || !items) return [];
     const byId = new Map(items.map((it) => [it.id, it]));
-    return recentIds().map((id) => byId.get(id)).filter(Boolean).slice(0, 8);
+    return recentIds().map((id) => byId.get(id)).filter((it) => it && (!cat || it.category === cat)).slice(0, 8);
   }, [items, q, cat]);
 
   const picked = new Set(pickedIds);
@@ -81,8 +82,16 @@ export default function FabricSearch({ onPick, onClose, onCamera, pickedIds = []
           {onCamera && <button data-testid="fabric-search-camera" onClick={onCamera} aria-label={t("fs_snap")} className="p-2.5 text-brand-700 rounded-full active:bg-brand-50"><CamIcon size={22} /></button>}
         </div>
 
+        {/* Locked to one category: say so, no way to wander off. */}
+        {onlyCat && (
+          <div data-testid="fabric-only-cat" className="flex items-center gap-2 px-4 py-2.5 border-b text-sm">
+            <Layers size={16} className="text-brand-700 shrink-0" aria-hidden="true" />
+            <span className="font-semibold text-gray-900 truncate">{onlyCat}</span>
+          </div>
+        )}
+
         {/* Category chips */}
-        {cats.length > 0 && (
+        {items && cats.length > 0 && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar px-3 py-2.5 border-b">
             <Chip active={!cat} onClick={() => chooseCat("")}>{t("fs_all")} <span className="opacity-60">{items.length}</span></Chip>
             {cats.map((c) => (
@@ -126,14 +135,14 @@ export default function FabricSearch({ onPick, onClose, onCamera, pickedIds = []
           )}
 
           {!loading && !empty && results.length === 0 && catHits.length === 0 && (
-            <Empty icon={Search} title={`${t("fs_no_match")} “${q}”`} text={t("fs_no_match_text")} action={t("fs_snap")} onAction={onCamera} />
+            <Empty icon={Search} title={q ? `${t("fs_no_match")} “${q}”` : `${cat} · 0 ${t("fs_fabrics")}`} text={t("fs_no_match_text")} action={t("fs_snap")} onAction={onCamera} />
           )}
 
           {results.length > 0 && (
             <Section title={q || cat ? `${results.length} ${t("fs_fabrics")}` : t("fs_all_fabrics")}>
               {results.slice(0, limit).map((it) => {
                 const on = picked.has(it.id);
-                const sub = [it.category, it.garment_type].filter(Boolean).join(" · ");
+                const sub = [!onlyCat && it.category, it.garment_type].filter(Boolean).join(" · ");
                 const swap = !on && replaceHint ? replaceHint(it) : "";
                 return (
                   <button key={it.id} data-testid={`fabric-${it.id}`} onClick={() => pick(it)} disabled={on}

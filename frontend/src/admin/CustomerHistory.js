@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { Cake, Repeat, ShoppingBag, IndianRupee, CalendarClock, Pencil, Sparkles } from "lucide-react";
+import { Cake, Repeat, ShoppingBag, Wallet, CalendarClock, Pencil, Sparkles, Award } from "lucide-react";
 import { Badge, Button, Card, inputCls } from "@/admin/ui";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -45,6 +45,31 @@ export function fmtDate(iso) {
   try { return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }); } catch { return ""; }
 }
 
+// "Oct 2026": short enough for a session tile.
+function fmtMonthYear(iso) {
+  try { return new Date(iso).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "Asia/Kolkata" }); } catch { return ""; }
+}
+
+// Whole months from the first purchase to today (IST).
+function monthsSince(iso) {
+  const [y, m, d] = new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).split("-").map(Number);
+  const today = todayIST();
+  const n = (today.getUTCFullYear() - y) * 12 + (today.getUTCMonth() + 1 - m) - (today.getUTCDate() < d ? 1 : 0);
+  return Math.max(0, n);
+}
+
+// "With us 2 years" / "With us 5 months" / "First purchase this month".
+function useTenure() {
+  const { t } = useLang();
+  return (iso) => {
+    const n = monthsSince(iso);
+    if (n < 1) return t("cs_this_month");
+    if (n < 12) return t(n === 1 ? "cs_month_one" : "cs_months").replace("{n}", n);
+    const y = Math.floor(n / 12);
+    return t(y === 1 ? "cs_year_one" : "cs_years").replace("{n}", y);
+  };
+}
+
 export const rupees = (n) => `₹${Math.round(n || 0).toLocaleString("en-IN")}`;
 
 function useAgo() {
@@ -74,6 +99,7 @@ function Occasions({ h, compact }) {
 export function HistoryStrip({ h }) {
   const { t } = useLang();
   const ago = useAgo();
+  const tenure = useTenure();
   if (!h) return null;
   if (!h.last_visit) {
     return (
@@ -89,10 +115,17 @@ export function HistoryStrip({ h }) {
       <div className="flex flex-wrap gap-1.5">
         <Badge icon={Repeat}><span className="num">{h.visits}</span> {t(h.visits === 1 ? "hist_visit_one" : "hist_visits_short")}</Badge>
         <Badge icon={ShoppingBag}><span className="num">{h.purchased}</span> {t("hist_bought_short")}</Badge>
-        <Badge tone="green"><span className="num">{rupees(h.revenue)}</span></Badge>
+        <Badge icon={Wallet}><span className="num">{rupees(h.revenue)}</span></Badge>
         {h.dob && <Badge icon={Cake}>{fmtDayMonth({ ...h.dob, year: null })}</Badge>}
       </div>
-      <p className="text-xs text-gray-600 mt-1.5 flex items-center gap-1"><CalendarClock size={12} /> {t("hist_last_visit")}: {ago(h.last_visit)}</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+        <span className="flex items-center gap-1"><CalendarClock size={12} aria-hidden="true" /> {t("hist_last_visit")}: {ago(h.last_visit)}</span>
+        {h.since && (
+          <span data-testid="customer-since" className="flex items-center gap-1 text-brand-700 font-medium" title={tenure(h.since)}>
+            <Award size={12} aria-hidden="true" /> {t("cs_since").replace("{d}", fmtMonthYear(h.since))}
+          </span>
+        )}
+      </div>
       <Occasions h={h} compact />
     </div>
   );
@@ -141,6 +174,7 @@ function Stat({ icon: Icon, label, children, tone = "text-gray-900", onEdit, cla
 export function HistoryCard({ h, customerId, onSaved, canEdit = true }) {
   const { t } = useLang();
   const ago = useAgo();
+  const tenure = useTenure();
   const [edit, setEdit] = useState(null);
   if (!h) return null;
   const save = async () => {
@@ -157,13 +191,27 @@ export function HistoryCard({ h, customerId, onSaved, canEdit = true }) {
         <p className="text-[15px] font-semibold text-gray-900">{t("hist_title")}</p>
         {first && <Badge tone="sky" icon={Sparkles}>{t("hist_new")}</Badge>}
       </div>
+      {/* Loyalty ribbon: how long they have been buying here. */}
+      {h.since ? (
+        <div data-testid="customer-since-card" className="mb-2 flex items-center gap-3 rounded-xl bg-brand-50 px-3 py-2.5">
+          <span className="w-9 h-9 rounded-full bg-white text-brand-700 flex items-center justify-center shrink-0 shadow-card"><Award size={18} aria-hidden="true" /></span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-brand-800">{t("cs_since").replace("{d}", fmtDate(h.since))}</p>
+            <p className="text-xs text-brand-700">{tenure(h.since)}</p>
+          </div>
+        </div>
+      ) : !first && (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-600">
+          <Award size={14} aria-hidden="true" /> {t("cs_none")}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <Stat icon={Cake} label={t("hist_dob")} onEdit={canEdit ? () => setEdit({ dob: h.dob || {} }) : null} className="col-span-2">
           {h.dob ? <>{fmtDayMonth(h.dob)}{years !== null && <span className="text-gray-600 font-normal"> · {years} {t("years")}</span>}</> : <span className="text-gray-500 font-normal">{t("not_added")}</span>}
         </Stat>
         <Stat icon={Repeat} label={t("hist_visits")}>{h.visits}</Stat>
-        <Stat icon={ShoppingBag} label={t("hist_purchased")} tone="text-emerald-700">{h.purchased}</Stat>
-        <Stat icon={IndianRupee} label={t("hist_revenue")} tone="text-emerald-700">{rupees(h.revenue)}</Stat>
+        <Stat icon={ShoppingBag} label={t("hist_purchased")}>{h.purchased}</Stat>
+        <Stat icon={Wallet} label={t("hist_revenue")}>{rupees(h.revenue)}</Stat>
         <Stat icon={CalendarClock} label={t("hist_last_visit")}>
           {first ? <span className="text-gray-600 font-normal">{t("hist_first_visit")}</span>
             : <span title={fmtDate(h.last_visit)}>{ago(h.last_visit)}</span>}

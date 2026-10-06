@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { X, Loader2, ChevronRight, ChevronLeft, ArrowLeft } from "lucide-react";
 
 // Shared building blocks for the admin app, so every screen looks and behaves
@@ -10,8 +10,9 @@ export function Page({ children, className = "" }) {
   return <div className={`px-4 py-5 sm:px-6 lg:px-10 lg:py-9 max-w-6xl mx-auto ${className}`}>{children}</div>;
 }
 
+// 16px text on phones: smaller text makes iOS zoom the page on focus.
 export const inputCls =
-  "w-full h-11 rounded-xl border border-gray-300 bg-white px-3.5 text-[15px] text-gray-900 placeholder:text-gray-500 " +
+  "w-full h-12 sm:h-11 rounded-xl border border-gray-300 bg-white px-3.5 text-base sm:text-[15px] text-gray-900 placeholder:text-gray-500 " +
   "transition-colors focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 disabled:bg-gray-50";
 
 export const selectCls = inputCls + " pr-8";
@@ -28,15 +29,16 @@ const VARIANTS = {
 const SIZES = {
   sm: "h-9 px-3 text-sm gap-1.5 rounded-xl",
   md: "h-11 px-4 text-[15px] gap-2 rounded-xl",
+  xl: "h-14 px-6 text-base font-semibold gap-2 rounded-2xl",
   lg: "h-12 px-5 text-base gap-2 rounded-xl",
 };
 
 export function Button({ variant = "primary", size = "md", icon: Icon, loading, full, className = "", children, disabled, ...props }) {
   return (
     <button {...props} disabled={disabled || loading}
-      className={`inline-flex items-center justify-center whitespace-nowrap font-medium transition-all active:scale-[0.98]
+      className={`inline-flex items-center justify-center whitespace-nowrap font-medium transition-all active:scale-[0.98] touch-manipulation
         disabled:opacity-50 disabled:pointer-events-none ${VARIANTS[variant]} ${SIZES[size]} ${full ? "w-full" : ""} ${className}`}>
-      {loading ? <Loader2 size={size === "sm" ? 15 : 18} className="animate-spin" /> : Icon && <Icon size={size === "sm" ? 15 : 18} strokeWidth={2} />}
+      {loading ? <Loader2 size={size === "sm" ? 15 : 18} className="animate-spin" /> : Icon && <Icon size={size === "sm" ? 15 : 18} strokeWidth={2} aria-hidden="true" />}
       {children}
     </button>
   );
@@ -46,8 +48,8 @@ export function IconButton({ icon: Icon, label, className = "", size = 20, tone 
   const tones = { default: "text-gray-600 hover:bg-gray-100 hover:text-gray-900", onDark: "text-white bg-white/10 hover:bg-white/20" };
   return (
     <button {...props} aria-label={label} title={label}
-      className={`inline-flex items-center justify-center w-10 h-10 rounded-xl transition-colors active:scale-95 ${tones[tone]} ${className}`}>
-      <Icon size={size} strokeWidth={2} />
+      className={`inline-flex items-center justify-center w-11 h-11 rounded-xl transition-colors active:scale-95 touch-manipulation ${tones[tone]} ${className}`}>
+      <Icon size={size} strokeWidth={2} aria-hidden="true" />
     </button>
   );
 }
@@ -131,49 +133,101 @@ export function Skeleton({ className = "" }) {
   return <div className={`skeleton relative rounded-xl ${className}`} />;
 }
 
-export function Segmented({ value, options, onChange, testid, className = "" }) {
+// `fit` sizes each segment to its label (for options of uneven length).
+export function Segmented({ value, options, onChange, testid, fit, className = "" }) {
   return (
-    <div className={`grid gap-1 p-1 bg-gray-100 rounded-xl ${className}`} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div className={`grid gap-1 p-1 bg-gray-100 rounded-xl ${className}`} style={{ gridTemplateColumns: fit ? `repeat(${options.length}, auto)` : `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => (
         <button key={o.id} type="button" data-testid={testid ? `${testid}-${o.id}` : undefined} onClick={() => onChange(o.id)}
-          className={`h-9 rounded-lg text-sm font-medium transition-all ${value === o.id ? "bg-white shadow-card text-brand-700" : "text-gray-600 hover:text-gray-900"}`}>{o.label}</button>
+          aria-pressed={value === o.id}
+          className={`h-10 sm:h-9 ${fit ? "px-2" : "px-1"} rounded-lg text-sm font-medium transition-all truncate touch-manipulation ${value === o.id ? "bg-white shadow-card text-brand-700" : "text-gray-600 hover:text-gray-900"}`}>{o.label}</button>
       ))}
     </div>
   );
 }
 
-// Bottom sheet on phones, centred dialog from `sm` up. Escape and the
-// backdrop close it unless `locked` (e.g. while saving).
+// Bottom sheet on phones, centred dialog from `sm` up. Escape, the backdrop
+// and a downward swipe on the header close it unless `locked` (e.g. saving).
 export function Sheet({ title, subtitle, onClose, children, footer, size = "md", locked, testid, closeTestId, headerExtra, bodyClass = "" }) {
+  const [drag, setDrag] = useState(0);
+  const start = useRef(null);
   useEffect(() => {
     if (locked) return;
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, locked]);
+  // Body behind the sheet must not scroll with it.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+  const onTouchStart = (e) => { if (!locked) start.current = e.touches[0].clientY; };
+  const onTouchMove = (e) => { if (start.current !== null) setDrag(Math.max(0, e.touches[0].clientY - start.current)); };
+  const onTouchEnd = () => { if (start.current === null) return; start.current = null; if (drag > 90) onClose(); setDrag(0); };
   const width = { sm: "sm:max-w-sm", md: "sm:max-w-lg", lg: "sm:max-w-2xl", xl: "sm:max-w-4xl" }[size];
   return (
-    <div className="fixed inset-0 z-40 bg-gray-950/40 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-6 animate-in fade-in duration-150"
+    <div className="fixed inset-0 z-50 bg-gray-950/40 flex items-end sm:items-center justify-center sm:p-6 animate-in fade-in duration-150"
       onClick={locked ? undefined : onClose}>
       <div data-testid={testid} role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}
         onClick={(e) => e.stopPropagation()}
-        className={`relative bg-white w-full ${width} rounded-t-3xl sm:rounded-2xl shadow-pop max-h-[92dvh] flex flex-col
+        style={drag ? { transform: `translateY(${drag}px)`, transition: "none" } : undefined}
+        className={`relative bg-white w-full ${width} rounded-t-3xl sm:rounded-2xl shadow-pop max-h-[92dvh] flex flex-col transition-transform duration-200
           animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-2 sm:zoom-in-[0.98] duration-200`}>
-        <span className="absolute left-1/2 -translate-x-1/2 top-2 w-10 h-1 rounded-full bg-gray-300 sm:hidden" />
-        {title !== undefined && (
-          <div className="flex items-start gap-3 px-5 sm:px-6 pt-5 pb-3">
-            {headerExtra}
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-semibold text-gray-900 tracking-tight">{title}</h2>
-              {subtitle && <p className="text-sm text-gray-600 mt-0.5">{subtitle}</p>}
+        <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} className="touch-none sm:touch-auto">
+          <span className="absolute left-1/2 -translate-x-1/2 top-2 w-10 h-1 rounded-full bg-gray-300 sm:hidden" aria-hidden="true" />
+          {title !== undefined && (
+            <div className="flex items-start gap-3 px-5 sm:px-6 pt-5 pb-3">
+              {headerExtra}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold text-gray-900 tracking-tight">{title}</h2>
+                {subtitle && <p className="text-sm text-gray-600 mt-0.5">{subtitle}</p>}
+              </div>
+              {!locked && <IconButton data-testid={closeTestId} icon={X} label="Close" onClick={onClose} className="-mr-2 -mt-1.5" />}
             </div>
-            {!locked && <IconButton data-testid={closeTestId} icon={X} label="Close" onClick={onClose} className="-mr-2 -mt-1" />}
-          </div>
-        )}
+          )}
+        </div>
         <div className={`flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6 pb-5 ${bodyClass}`}>{children}</div>
-        {footer && <div className="border-t border-gray-100 px-5 sm:px-6 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] bg-white rounded-b-2xl">{footer}</div>}
+        {footer && <div className="border-t border-gray-100 px-5 sm:px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white sm:rounded-b-2xl">{footer}</div>}
       </div>
     </div>
+  );
+}
+
+// Phones: the screen's main actions, fixed above the home indicator. From
+// `lg` up it is not rendered: desktop puts the same actions in the header.
+export function BottomBar({ children, className = "" }) {
+  return (
+    <div className={`lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-gray-200 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${className}`}>
+      <div className="flex gap-3 max-w-xl mx-auto">{children}</div>
+    </div>
+  );
+}
+
+// Settings-style list: grouped rows that open a screen. Used by More.
+export function MenuGroup({ title, children }) {
+  return (
+    <section className="mb-6">
+      {title && <h2 className="px-1 mb-2 text-sm font-medium text-gray-600">{title}</h2>}
+      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-card divide-y divide-gray-100 overflow-hidden">{children}</div>
+    </section>
+  );
+}
+
+export function MenuRow({ icon: Icon, title, sub, meta, onClick, testid, tone = "default", chevron = true }) {
+  const danger = tone === "danger";
+  return (
+    <button type="button" data-testid={testid} onClick={onClick}
+      className="w-full min-h-[60px] flex items-center gap-3.5 px-4 py-3 text-left transition-colors hover:bg-gray-50 active:bg-gray-100 touch-manipulation">
+      {Icon && <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${danger ? "bg-red-50 text-red-700" : "bg-brand-50 text-brand-700"}`}><Icon size={18} aria-hidden="true" /></span>}
+      <span className="flex-1 min-w-0">
+        <span className={`block font-medium ${danger ? "text-red-700" : "text-gray-900"}`}>{title}</span>
+        {sub && <span className="block text-[13px] text-gray-600 line-clamp-2">{sub}</span>}
+      </span>
+      {meta}
+      {chevron && <ChevronRight size={18} className="text-gray-400 shrink-0" aria-hidden="true" />}
+    </button>
   );
 }
 
@@ -241,6 +295,30 @@ export function SubHeader({ parent, title, subtitle, icon: Icon, onBack, backTes
           {subtitle && <p className="text-[15px] text-gray-600 mt-0.5">{subtitle}</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Desktop trail above a deep screen: a back button and "Group > Screen". The
+// last entry is the current page; the others are links up.
+export function Crumbs({ trail, onBack, backLabel, testid, className = "" }) {
+  return (
+    <div className={`items-center gap-3 mb-4 ${className}`}>
+      <button data-testid={testid} onClick={onBack} aria-label={backLabel} title={backLabel}
+        className="w-9 h-9 rounded-xl border border-gray-300 bg-white text-gray-700 flex items-center justify-center shrink-0 hover:bg-gray-50 hover:border-gray-400 active:scale-95 transition-all">
+        <ArrowLeft size={17} aria-hidden="true" />
+      </button>
+      <nav aria-label="Breadcrumb" className="min-w-0">
+        <ol className="flex items-center gap-1.5 text-sm">
+          {trail.map((c, i) => (
+            <li key={i} className="flex items-center gap-1.5 min-w-0">
+              {i > 0 && <ChevronRight size={15} className="text-gray-400 shrink-0" aria-hidden="true" />}
+              {c.onClick ? <button onClick={c.onClick} className="text-gray-600 hover:text-brand-700 rounded truncate">{c.label}</button>
+                : <span aria-current="page" className="text-gray-900 font-medium truncate">{c.label}</span>}
+            </li>
+          ))}
+        </ol>
+      </nav>
     </div>
   );
 }
