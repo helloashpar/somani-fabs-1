@@ -226,3 +226,41 @@ fix. Fix it and run the script again.
   can resend it from the session.
 - Customers can reply **STOP** to unsubscribe (or **START** to come back). The
   Marketing tab lists who opted out.
+
+## 13. Switching from the test number to your real number
+
+Meta keeps the free test number in a separate **test WhatsApp Business
+Account**. Your real number lives in your verified business's own account. So
+when the real number is approved, only a few `.env` values change. The webhook,
+app secret, verify token, shop profile and settings all stay as they are.
+
+1. In WhatsApp Manager, confirm the real number shows **Connected** and the
+   display name review is **Approved** (step 6).
+2. Make sure your System User (step 8) has **Full control** of the **real**
+   WhatsApp Business Account. If you made the token while testing, assign the
+   real account under **Assign assets**. The same token keeps working.
+3. In `.env`, change only these two lines (App dashboard → WhatsApp → API Setup,
+   pick the real number in the **From** list):
+
+   ```
+   WHATSAPP_PHONE_NUMBER_ID=<real number's Phone number ID>
+   WHATSAPP_WABA_ID=<real WhatsApp Business Account ID>
+   ```
+
+4. Restart and run the setup script **with the PIN** this time:
+
+   ```bash
+   docker compose up -d
+   docker compose exec backend python scripts/whatsapp_setup.py --pin <your 6-digit PIN> --test-to <your mobile>
+   ```
+
+   Templates belong to an account, so the ones approved on the test account
+   don't carry over. The script submits them again to the real account
+   automatically. Run it again after a few hours to see them **APPROVED**.
+5. Make sure a **payment method** is added (step 7) before customers get messages.
+6. Print a fresh **backup QR** from Settings → Marketing → Connection. The old
+   one points to the test number.
+
+Until the templates show APPROVED on the real account, welcome and receipt
+messages fail with "This message template is not approved yet". Try-on looks
+sent inside the 24-hour window still work.
