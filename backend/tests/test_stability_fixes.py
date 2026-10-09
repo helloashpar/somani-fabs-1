@@ -29,7 +29,7 @@ BASE_URL = os.environ.get(
 ).rstrip("/")
 API = f"{BASE_URL}/api"
 
-SUPER_USER = "superashwini"
+SUPER_USER = os.environ.get("SUPER_ADMIN_MOBILE", "7229900422")  # sign in by mobile
 SUPER_PASS = "6Lr£1Wp2VD`Q"
 
 
@@ -45,7 +45,7 @@ def _jpeg_b64(color=(180, 60, 60), size=(256, 256)):
 def super_token():
     r = requests.post(
         f"{API}/auth/login",
-        json={"username": SUPER_USER, "password": SUPER_PASS},
+        json={"login": SUPER_USER, "password": SUPER_PASS},
         timeout=30,
     )
     assert r.status_code == 200, f"super login failed {r.status_code} {r.text}"
@@ -187,19 +187,19 @@ class TestLoginStability:
     def test_correct_creds_returns_token(self):
         r = requests.post(
             f"{API}/auth/login",
-            json={"username": SUPER_USER, "password": SUPER_PASS},
+            json={"login": SUPER_USER, "password": SUPER_PASS},
             timeout=30,
         )
         assert r.status_code == 200
         data = r.json()
         assert "token" in data and isinstance(data["token"], str) and len(data["token"]) > 20
-        assert data["user"]["username"] == SUPER_USER
+        assert data["user"]["mobile"] == SUPER_USER
 
     def test_wrong_password_returns_401_not_500(self):
         for _ in range(3):
             r = requests.post(
                 f"{API}/auth/login",
-                json={"username": SUPER_USER, "password": "definitely-wrong-xyz"},
+                json={"login": SUPER_USER, "password": "definitely-wrong-xyz"},
                 timeout=30,
             )
             assert r.status_code == 401, f"expected 401, got {r.status_code} {r.text}"
@@ -209,7 +209,7 @@ class TestLoginStability:
         for i in range(5):
             r = requests.post(
                 f"{API}/auth/login",
-                json={"username": SUPER_USER, "password": SUPER_PASS},
+                json={"login": SUPER_USER, "password": SUPER_PASS},
                 timeout=30,
             )
             assert r.status_code == 200, f"login #{i} failed: {r.status_code}"

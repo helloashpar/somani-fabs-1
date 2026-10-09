@@ -2,12 +2,14 @@ import React, { useState, useEffect } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { UserPlus, Shield, Crown, Users, Trash2, Info, RotateCcw } from "lucide-react";
+import { UserPlus, Shield, Crown, Users, Trash2, Info, RotateCcw, Phone, Mail, AlertTriangle } from "lucide-react";
 import { Badge, Button, Card, CardHeader, Field, Segmented, Sheet, Skeleton, Toggle, inputCls } from "@/admin/ui";
 import { PERM_GROUPS } from "@/admin/perms";
 
 function fmtDate(iso) { try { return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }); } catch { return ""; } }
-const initials = (n = "") => n.slice(0, 2).toUpperCase();
+const initials = (n = "") => n.replace(/^\+91\s*/, "").slice(0, 2).toUpperCase();
+// "9876543210" -> "+91 98765 43210"
+export const fmtMobile = (m = "") => (m.length === 10 ? `+91 ${m.slice(0, 5)} ${m.slice(5)}` : m);
 
 function RoleBadge({ a }) {
   const { t } = useLang();
@@ -16,13 +18,16 @@ function RoleBadge({ a }) {
   return <Badge>{t("role_staff")}</Badge>;
 }
 
-// Create or edit one admin. Staff get a permission matrix (recommended values
-// pre-ticked); super admins have every permission and manage the team.
+// Create or edit one admin. Every admin signs in with their mobile number
+// (required) or email (optional). Staff get a permission matrix (recommended
+// values pre-ticked); super admins have every permission and manage the team.
 function AdminSheet({ admin, registry, me, onClose, onSaved }) {
   const { t } = useLang();
   const isNew = !admin;
   const defaults = Object.fromEntries(registry.map((p) => [p.key, p.staff]));
-  const [username, setUsername] = useState("");
+  const [name, setName] = useState(admin?.full_name || "");
+  const [mobile, setMobile] = useState(admin?.mobile ? fmtMobile(admin.mobile) : "");
+  const [email, setEmail] = useState(admin?.email || "");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(admin?.role || "admin");
   const [perms, setPerms] = useState(admin && admin.role !== "super" ? { ...admin.permissions } : defaults);
@@ -35,12 +40,16 @@ function AdminSheet({ admin, registry, me, onClose, onSaved }) {
   const save = async () => {
     setSaving(true);
     try {
+      if (!mobile.trim() && !owner) { toast.error(t("adm_mobile_needed")); setSaving(false); return; }
       if (isNew) {
         if (password.length < 8) { toast.error(t("password_hint")); setSaving(false); return; }
-        await api.post("/admins", { username: username.trim(), password, role, permissions: perms });
+        await api.post("/admins", { name: name.trim(), mobile: mobile.trim(), email: email.trim(), password, role, permissions: perms });
         toast.success(t("admin_created"));
+      } else if (owner) {
+        await api.put(`/admins/${admin.id}`, { name: name.trim() });
+        toast.success("Saved");
       } else {
-        const body = { permissions: perms };
+        const body = { name: name.trim(), mobile: mobile.trim(), email: email.trim(), permissions: perms };
         if (!lockedRole) { body.role = role; body.active = active; }
         if (password) body.password = password;
         await api.put(`/admins/${admin.id}`, body);
@@ -51,39 +60,46 @@ function AdminSheet({ admin, registry, me, onClose, onSaved }) {
     setSaving(false);
   };
   const del = async () => {
-    if (!window.confirm(`${t("delete")} ${admin.username}?`)) return;
+    if (!window.confirm(`${t("delete")} ${admin.name}?`)) return;
     try { await api.delete(`/admins/${admin.id}`); toast.success("Deleted"); onSaved(); } catch (e) { toast.error(apiErr(e)); }
   };
 
   const onCount = registry.filter((p) => perms[p.key]).length;
   return (
-    <Sheet title={isNew ? t("add_admin") : admin.username} subtitle={isNew ? t("add_admin_sub") : null} onClose={onClose} size="lg" locked={saving}
+    <Sheet title={isNew ? t("add_admin") : admin.name} subtitle={isNew ? t("add_admin_sub") : null} onClose={onClose} size="lg" locked={saving}
       testid="admin-sheet"
-      footer={owner ? null : (
+      footer={(
         <div className="flex gap-2">
-          {!isNew && !self && <Button data-testid="delete-admin" variant="dangerSoft" icon={Trash2} onClick={del}>{t("delete")}</Button>}
+          {!isNew && !self && !owner && <Button data-testid="delete-admin" variant="dangerSoft" icon={Trash2} onClick={del}>{t("delete")}</Button>}
           <Button data-testid="save-admin" onClick={save} loading={saving} className="flex-1">{isNew ? t("create") : t("save")}</Button>
         </div>
       )}>
+      <div className="space-y-5">
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label={t("adm_name")} hint={t("adm_name_hint")} className="sm:col-span-2">
+            <input data-testid="admin-name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" maxLength={60} className={inputCls} />
+          </Field>
+          <Field label={`${t("adm_mobile")} *`} hint={owner ? t("adm_owner_env") : t("adm_mobile_hint")}>
+            <input data-testid="admin-mobile" type="tel" inputMode="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={owner}
+              placeholder="98765 43210" autoComplete="off" className={`${inputCls} ${owner ? "text-gray-600" : ""}`} />
+          </Field>
+          <Field label={t("adm_email")} hint={owner ? t("adm_owner_env") : t("adm_email_hint")}>
+            <input data-testid="admin-email" type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={owner}
+              autoCapitalize="none" autoComplete="off" className={`${inputCls} ${owner ? "text-gray-600" : ""}`} />
+          </Field>
+          {!owner && (
+            <Field label={isNew ? t("password") : t("new_password")} hint={isNew ? t("password_hint") : t("new_password_hint")} className="sm:col-span-2">
+              <input data-testid="new-admin-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+            </Field>
+          )}
+        </div>
       {owner ? (
         <div className="flex gap-3 rounded-xl bg-brand-50 text-brand-900 p-4 text-sm">
           <Crown size={18} className="shrink-0 mt-0.5 text-brand-700" />
           <p>{t("owner_note")}</p>
         </div>
       ) : (
-        <div className="space-y-5">
-          <div className="grid sm:grid-cols-2 gap-4">
-            {isNew ? (
-              <Field label={t("username")} hint={t("username_hint")}>
-                <input data-testid="new-admin-username" value={username} onChange={(e) => setUsername(e.target.value)} autoCapitalize="none" autoComplete="off" className={inputCls} />
-              </Field>
-            ) : (
-              <Field label={t("username")}><input value={admin.username} disabled className={`${inputCls} text-gray-600`} /></Field>
-            )}
-            <Field label={isNew ? t("password") : t("new_password")} hint={isNew ? t("password_hint") : t("new_password_hint")}>
-              <input data-testid="new-admin-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
-            </Field>
-          </div>
+        <>
 
           <div>
             <span className="block text-sm font-medium text-gray-800 mb-1.5">{t("role")}</span>
@@ -136,8 +152,9 @@ function AdminSheet({ admin, registry, me, onClose, onSaved }) {
               <Toggle testid="admin-active" label={t("account_active")} checked={active} onChange={setActive} />
             </div>
           )}
-        </div>
+        </>
       )}
+      </div>
     </Sheet>
   );
 }
@@ -162,13 +179,18 @@ export default function Team({ user }) {
           : list.map((a) => {
             const on = Object.values(a.permissions || {}).filter(Boolean).length;
             return (
-              <button key={a.id} data-testid={`admin-row-${a.username}`} onClick={() => total && setSheet({ admin: a })}
+              <button key={a.id} data-testid={`admin-row-${a.mobile || a.id}`} onClick={() => total && setSheet({ admin: a })}
                 className={`w-full text-left flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors ${a.active ? "" : "opacity-60"}`}>
-                <span className={`w-9 h-9 rounded-full text-sm font-semibold flex items-center justify-center shrink-0 ${a.role === "super" ? "bg-brand-700 text-white" : "bg-gray-100 text-gray-700"}`}>{initials(a.username)}</span>
+                <span className={`w-9 h-9 rounded-full text-sm font-semibold flex items-center justify-center shrink-0 ${a.role === "super" ? "bg-brand-700 text-white" : "bg-gray-100 text-gray-700"}`}>{initials(a.name)}</span>
                 <span className="flex-1 min-w-0">
-                  <span className="block font-medium text-gray-900 truncate">{a.username}{a.id === user.id && <span className="text-gray-600 font-normal"> ({t("you")})</span>}</span>
-                  <span className="block text-xs text-gray-600">{a.created_by && a.created_by !== "system" ? `${t("added_by")} ${a.created_by} · ` : ""}{fmtDate(a.created_at)}</span>
+                  <span className="block font-medium text-gray-900 truncate">{a.name}{a.id === user.id && <span className="text-gray-600 font-normal"> ({t("you")})</span>}</span>
+                  <span className="flex flex-wrap items-center gap-x-3 text-xs text-gray-600">
+                    {a.mobile && a.full_name && <span className="inline-flex items-center gap-1 num"><Phone size={11} aria-hidden="true" />{fmtMobile(a.mobile)}</span>}
+                    {a.email && <span className="inline-flex items-center gap-1 truncate"><Mail size={11} aria-hidden="true" />{a.email}</span>}
+                    <span>{a.created_by && a.created_by !== "system" ? `${t("added_by")} ${a.created_by} · ` : ""}{fmtDate(a.created_at)}</span>
+                  </span>
                 </span>
+                {!a.mobile && <Badge tone="red" icon={AlertTriangle}>{t("adm_no_mobile")}</Badge>}
                 {!a.active && <Badge tone="red">{t("turned_off")}</Badge>}
                 {a.role !== "super" && total > 0 && <Badge className="hidden sm:inline-flex"><span className="num">{on}/{total}</span> {t("access")}</Badge>}
                 <RoleBadge a={a} />

@@ -3,7 +3,7 @@
 Roles
 - super: a super admin. Has every permission, now and in future, and is the
   only role that can manage the team (create, edit, turn off, delete admins).
-  The account named by SUPER_ADMIN_USERNAME in .env is the Owner: it is always
+  The account with mobile SUPER_ADMIN_MOBILE in .env is the Owner: it is always
   a super admin, always active, and cannot be deleted or changed in the app.
 - admin: staff. Can do exactly what their permissions allow.
 

@@ -25,7 +25,7 @@ Search-first New Try-On flow, with categories, groups and styles managed under C
 - New look: Geist type, Countr OS green theme, shared components in `frontend/src/admin/ui.js`.
 - Navigation: desktop sidebar with a prominent **Live Shop**, try-on gallery, skeleton loading states, sheets for every form, and a consistent three-level layout (area, hub tile with back button and breadcrumb, underlined section tabs).
 - Shop-wide app language in More Settings. The public home page is English only.
-- Emergent branding, script and analytics removed from the site.
+- Third-party platform branding, script and analytics removed from the site.
 - Rules for future changes: `docs/design-system.md`.
 
 ### Roles and permissions

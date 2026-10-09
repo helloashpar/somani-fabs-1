@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { bestColumns } from "@/lib/bestGrid";
+import { useBrand } from "@/lib/brand";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -13,6 +14,7 @@ function fmtTime(iso) {
 
 export default function Display() {
   const { secret } = useParams();
+  const brand = useBrand();
   const [previews, setPreviews] = useState([]);
   const [idle, setIdle] = useState("");
   const timer = useRef(null);
@@ -55,9 +57,12 @@ export default function Display() {
         {idle ? (
           <img src={idle} alt="" className="w-full h-full object-contain" />
         ) : (
-          <div className="text-center">
-            <div className="font-black text-white text-6xl tracking-tight" style={{ fontFamily: "Playfair Display, serif" }}>Somani Fabs</div>
-            <p className="text-neutral-500 mt-4 tracking-[0.3em] uppercase text-sm">Shivnarayan Shivbhagwan Somani</p>
+          <div className="text-center px-8">
+            {brand.logo_src && <img src={brand.logo_src} alt="" className="mx-auto mb-8 h-40 w-40 object-contain" />}
+            <div className="font-black text-white text-6xl tracking-tight" style={{ fontFamily: "Playfair Display, serif" }}>{brand.shop_name}</div>
+            {(brand.legal_name || brand.city) && (
+              <p className="text-neutral-500 mt-4 tracking-[0.3em] uppercase text-sm">{brand.legal_name || brand.city}</p>
+            )}
           </div>
         )}
       </div>

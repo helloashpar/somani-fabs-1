@@ -1,7 +1,7 @@
 # Somani Fabs — Full Migration to Your Own DigitalOcean Droplet
 
 **Goal:** run this app 100% on your own server, with your own GitHub repo, so that
-every `git push` automatically updates the live site. No Emergent needed afterwards.
+every `git push` automatically updates the live site. No third-party hosting platform needed.
 
 **How it will work when finished:**
 
@@ -23,7 +23,7 @@ Everything the server needs is already in this repo:
 | File | What it does |
 |---|---|
 | `backend/Dockerfile` | Builds the FastAPI backend image |
-| `backend/requirements.prod.txt` | Backend packages (no Emergent-only packages) |
+| `backend/requirements.prod.txt` | Backend packages (production packages only) |
 | `frontend/Dockerfile` | Builds the React app and serves it with nginx |
 | `docker-compose.yml` | Runs both containers together |
 | `deploy/setup-droplet.sh` | One-time server setup (Docker, nginx, firewall, HTTPS tool) |
@@ -36,7 +36,7 @@ Everything the server needs is already in this repo:
 
 ## STEP 1 — Put the code on GitHub (5 min)
 
-1. In the Emergent chat input, use the **“Save to GitHub”** button.
+1. Push this code to a GitHub repository you own.
 2. Create a **private** repo, e.g. `somanifabs`. Branch: `main`.
 3. Confirm on github.com that you can see `backend/`, `frontend/`, `deploy/`,
    `docker-compose.yml`.
@@ -58,10 +58,10 @@ go into GitHub). You will create the `.env` directly on the droplet in Step 4.
    `mongodb+srv://USER:PASSWORD@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority`
    Replace `USER` and `PASSWORD` with the ones you created.
 
-**About your existing data:** the current production database lives inside Emergent, so
+**About your existing data:** the old production database lives with the previous host, so
 Atlas starts empty. Your admin account is re-created automatically on first start from
-`SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD`. Customer records would need to be
-re-added (or ask Emergent support for a database dump if you want them moved).
+`SUPER_ADMIN_MOBILE` (or `SUPER_ADMIN_EMAIL`) / `SUPER_ADMIN_PASSWORD`. Customer records would need to be
+re-added (or ask the previous host for a database dump if you want them moved).
 Categories/settings are re-created automatically.
 
 ---
@@ -114,7 +114,8 @@ Fill in:
 | `DB_NAME` | `somanifabs` (keep it the same forever) |
 | `CORS_ORIGINS` | `*` for now |
 | `JWT_SECRET` | any long random text (run `openssl rand -hex 32` to make one) |
-| `SUPER_ADMIN_USERNAME` | your admin login |
+| `SUPER_ADMIN_MOBILE` | the owner's mobile number, used to sign in |
+| `SUPER_ADMIN_EMAIL` | the owner's email, a second way to sign in |
 | `SUPER_ADMIN_PASSWORD` | your admin password |
 | `OPENAI_API_KEY` | your OpenAI key — <https://platform.openai.com/api-keys> |
 | `OPENAI_IMAGE_MODEL` | `gpt-image-2.5-sunburst` (best at keeping the face while changing clothes; `gpt-image-2.5-flare` is the automatic fallback) |
@@ -165,7 +166,7 @@ Expected health output: `{"status":"ok", ...}`.
 
 Now open in your browser: **`http://YOUR_DROPLET_IP`**
 
-- Login with your `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD`.
+- Login with your `SUPER_ADMIN_MOBILE` (or `SUPER_ADMIN_EMAIL`) / `SUPER_ADMIN_PASSWORD`.
 - Add a customer with a photo, start a session, generate a try-on image.
 - Check the live display URL too.
 
@@ -209,7 +210,7 @@ BigRock / Hostinger…), open **DNS management** for `somanifabs.com`, and set:
 | A | `@` | `YOUR_DROPLET_IP` | 300 |
 | A | `www` | `YOUR_DROPLET_IP` | 300 |
 
-Delete any old A / CNAME records that pointed to Emergent. If the domain uses
+Delete any old A / CNAME records that pointed to the previous host. If the domain uses
 Cloudflare, set the record to **DNS only (grey cloud)** until HTTPS is issued.
 
 Wait 10–30 minutes, then check on the droplet:
@@ -234,7 +235,7 @@ nano /opt/somanifabs/.env       # CORS_ORIGINS=https://somanifabs.com,https://ww
 cd /opt/somanifabs && docker compose up -d
 ```
 
-**7d. Turn off the Emergent deployment** once the droplet is live, so you stop paying for it.
+**7d. Turn off the old deployment** once the droplet is live, so you stop paying for it.
 
 ---
 

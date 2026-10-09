@@ -13,7 +13,7 @@ from PIL import Image
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001").rstrip("/")
 API = f"{BASE_URL}/api"
 
-SUPER_USER = "superashwini"
+SUPER_USER = os.environ.get("SUPER_ADMIN_MOBILE", "7229900422")  # sign in by mobile
 SUPER_PASS = "6Lr£1Wp2VD`Q"
 
 # ---------- Helpers ----------
@@ -28,7 +28,7 @@ def _jpeg_b64(color=(180, 60, 60), size=(256, 256)):
 
 @pytest.fixture(scope="session")
 def super_token():
-    r = requests.post(f"{API}/auth/login", json={"username": SUPER_USER, "password": SUPER_PASS}, timeout=30)
+    r = requests.post(f"{API}/auth/login", json={"login": SUPER_USER, "password": SUPER_PASS}, timeout=30)
     assert r.status_code == 200, f"super login failed {r.status_code} {r.text}"
     data = r.json()
     assert "token" in data and data["user"]["role"] == "super"
@@ -54,11 +54,11 @@ class TestAuth:
         r = requests.get(f"{API}/auth/me", headers=super_h, timeout=30)
         assert r.status_code == 200
         u = r.json()
-        assert u["username"] == SUPER_USER
+        assert u["mobile"] == SUPER_USER and u["is_owner"]
         assert u["role"] == "super"
 
     def test_login_wrong_password(self):
-        r = requests.post(f"{API}/auth/login", json={"username": SUPER_USER, "password": "wrong"}, timeout=30)
+        r = requests.post(f"{API}/auth/login", json={"login": SUPER_USER, "password": "wrong"}, timeout=30)
         assert r.status_code == 401
 
     def test_me_no_token(self):
@@ -86,12 +86,12 @@ class TestConfig:
 # ---------- Admin management ----------
 class TestAdmins:
     def test_create_admin_and_login(self, super_h, shared_state):
-        uname = f"TEST_admin_{int(time.time())}"
+        uname = f"9{int(time.time()) % 10**9:09d}"  # a fresh 10-digit mobile
         pw = "Pass1234!"
-        r = requests.post(f"{API}/admins", headers=super_h, json={"username": uname, "password": pw}, timeout=30)
+        r = requests.post(f"{API}/admins", headers=super_h, json={"name": "TEST admin", "mobile": uname, "password": pw}, timeout=30)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["username"] == uname and body["role"] == "admin"
+        assert body["mobile"] == uname and body["role"] == "admin"
         shared_state["admin_id"] = body["id"]
         shared_state["admin_user"] = uname
         shared_state["admin_pw"] = pw
@@ -99,10 +99,10 @@ class TestAdmins:
         # list
         r = requests.get(f"{API}/admins", headers=super_h, timeout=30)
         assert r.status_code == 200
-        assert any(a["username"] == uname for a in r.json())
+        assert any(a["mobile"] == uname for a in r.json())
 
         # login as new admin
-        r = requests.post(f"{API}/auth/login", json={"username": uname, "password": pw}, timeout=30)
+        r = requests.post(f"{API}/auth/login", json={"login": uname, "password": pw}, timeout=30)
         assert r.status_code == 200
         tok = r.json()["token"]
         shared_state["admin_token"] = tok
@@ -219,7 +219,8 @@ class TestSessionFlow:
         r = requests.get(f"{API}/display/{secret}/state", timeout=30)
         assert r.status_code == 200
         previews = r.json().get("previews", [])
-        assert all(p.get("admin_username") != SUPER_USER for p in previews)
+        me = requests.get(f"{API}/auth/me", headers=super_h, timeout=30).json()["id"]
+        assert all(p.get("admin_id") != me for p in previews)
 
     def test_end_session_and_history(self, super_h, shared_state):
         sid = shared_state["session_id"]

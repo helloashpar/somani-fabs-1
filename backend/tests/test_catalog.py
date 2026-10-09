@@ -9,7 +9,7 @@ import io
 import os
 
 for k, v in {"MONGO_URL": "mongodb://127.0.0.1:1", "DB_NAME": "test", "JWT_SECRET": "x",
-             "SUPER_ADMIN_USERNAME": "su", "SUPER_ADMIN_PASSWORD": "pw"}.items():
+             "SUPER_ADMIN_PASSWORD": "pw"}.items():
     os.environ.setdefault(k, v)
 
 import httpx
@@ -20,8 +20,8 @@ from PIL import Image
 
 import server
 
-SUPER = {"id": "u1", "username": "su", "role": "super"}
-STAFF = {"id": "u2", "username": "staff", "role": "admin"}
+SUPER = {"id": "u1", "name": "su", "role": "super"}
+STAFF = {"id": "u2", "name": "staff", "role": "admin"}
 TOP = {}  # {"category_id": <Top Wear id>}, set per test
 
 
