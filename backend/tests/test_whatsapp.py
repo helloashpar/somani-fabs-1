@@ -81,7 +81,7 @@ async def fake_auth(request: Request):
     role = request.headers.get("X-Role")
     if not role:
         raise HTTPException(401, "Not authenticated")
-    return {"id": "u-" + role, "username": role, "role": role}
+    return {"id": "u-" + role, "name": role, "role": role}
 
 
 @pytest_asyncio.fixture
@@ -141,7 +141,7 @@ def inbound(phone, text="", payload="", mid="in.1"):
                                        "messages": [m]}}]}]}
 
 
-STAFF = {"role": "admin", "id": "u1", "username": "staff", "permissions": __import__("permissions").staff_defaults()}
+STAFF = {"role": "admin", "id": "u1", "name": "staff", "permissions": __import__("permissions").staff_defaults()}
 
 
 # ---------- pure helpers ----------
@@ -337,7 +337,7 @@ async def test_staff_permission_toggle(env):
     with pytest.raises(HTTPException) as e:
         await messaging.send_look("t1", STAFF)
     assert e.value.status_code == 403
-    r = await messaging.send_look("t1", {"role": "super", "id": "s", "username": "boss"})
+    r = await messaging.send_look("t1", {"role": "super", "id": "s", "name": "boss"})
     assert r["wa_status"] == "queued"
 
 

@@ -642,7 +642,7 @@ async def set_consent(sid: str, body: Dict[str, Any], user=Depends(current_user)
     if not s or not s.get("wa_phone"):
         raise HTTPException(400, "This mobile number cannot get WhatsApp messages")
     consent = bool(body.get("consent"))
-    await record_consent(s["wa_phone"], s["customer_id"], consent, user["username"])
+    await record_consent(s["wa_phone"], s["customer_id"], consent, user["name"])
     await db.sessions.update_one({"id": sid}, {"$set": {"wa_consent": consent}})
     if consent:
         spawn(send_welcome(sid))

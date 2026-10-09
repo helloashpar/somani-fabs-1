@@ -2,11 +2,12 @@ import React, { useState, useEffect } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { Database, Download, Search, Cake, MessageCircle, Plus, Info } from "lucide-react";
+import { Database, Download, Search, Cake, MessageCircle, Plus, Info, Pencil, Check, X } from "lucide-react";
 import Avatar from "@/admin/Avatar";
 import { fmtDayMonth, fmtDate, rupees } from "@/admin/CustomerHistory";
 import { can } from "@/admin/perms";
 import { Badge, Button, Card, Empty, IconButton, Page, PageHeader, Sheet, Skeleton, inputCls } from "@/admin/ui";
+import { useBrand, slug } from "@/lib/brand";
 
 const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString("en-IN")}`;
 function fmt(iso) { try { return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }); } catch { return ""; } }
@@ -15,6 +16,7 @@ const PAGE = 80; // rows rendered at a time; more appear on scroll
 
 export default function Customers({ user, onStart }) {
   const { t } = useLang();
+  const brand = useBrand();
   const [list, setList] = useState(null);
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState("");
@@ -35,7 +37,7 @@ export default function Customers({ user, onStart }) {
       // axios rejects non-2xx responses, so an error is never saved as the .xlsx file.
       const { data } = await api.get("/customers/export", { responseType: "blob" });
       const url = URL.createObjectURL(data);
-      const a = document.createElement("a"); a.href = url; a.download = "somani_customers.xlsx"; a.click();
+      const a = document.createElement("a"); a.href = url; a.download = `${slug(brand.shop_name)}_customers.xlsx`; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { toast.error("Export failed. Please try again."); }
   };
@@ -104,14 +106,52 @@ export default function Customers({ user, onStart }) {
           </>
         )}
       </Card>
-      {sel && <CustomerProfile customer={sel} onClose={() => setSel(null)} onStart={can(user, "sessions_manage") && onStart ? (c) => { setSel(null); onStart(c); } : null} />}
+      {sel && <CustomerProfile customer={sel} onClose={() => setSel(null)} canEdit={can(user, "customers_edit")}
+        onRenamed={(name) => setList((l) => (l || []).map((c) => (c.id === sel.id ? { ...c, name } : c)))}
+        onStart={can(user, "sessions_manage") && onStart ? (c) => { setSel(null); onStart(c); } : null} />}
     </Page>
+  );
+}
+
+// The customer's name with an edit button. The mobile number identifies the
+// customer and stays; a misspelt or changed name can be corrected here.
+function NameEditor({ id, name, canEdit, onSaved }) {
+  const { t } = useLang();
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const save = async (e) => {
+    e?.preventDefault();
+    const v = draft.trim().replace(/\s+/g, " ");
+    if (!v) { toast.error(t("name_required")); return; }
+    if (v === name) { setDraft(null); return; }
+    setSaving(true);
+    try {
+      const { data } = await api.put(`/customers/${id}`, { name: v });
+      toast.success(t("name_saved")); setDraft(null); onSaved(data.name);
+    } catch (err) { toast.error(apiErr(err)); }
+    setSaving(false);
+  };
+  if (draft !== null) {
+    return (
+      <form onSubmit={save} className="flex items-center gap-1.5">
+        <input data-testid="customer-name-input" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus maxLength={80}
+          aria-label={t("cust_name")} className={`${inputCls} h-10 text-base font-semibold`} onKeyDown={(e) => e.key === "Escape" && setDraft(null)} />
+        <IconButton data-testid="customer-name-save" type="submit" icon={Check} label={t("save")} disabled={saving} className="shrink-0 !bg-brand-700 !text-white hover:!bg-brand-800" />
+        <IconButton type="button" icon={X} label={t("cancel")} onClick={() => setDraft(null)} className="shrink-0" />
+      </form>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <p data-testid="customer-name" className="font-semibold text-xl tracking-tight text-gray-900 truncate">{name}</p>
+      {canEdit && <IconButton data-testid="customer-name-edit" icon={Pencil} size={16} label={t("edit_name")} onClick={() => setDraft(name)} className="shrink-0 -my-2" />}
+    </div>
   );
 }
 
 // Everything the shop knows about one customer: contact, birthday, visits,
 // money, WhatsApp consent, every custom field, and each visit.
-function CustomerProfile({ customer, onClose, onStart }) {
+function CustomerProfile({ customer, onClose, onStart, canEdit, onRenamed }) {
   const { t } = useLang();
   const [data, setData] = useState(null);
   useEffect(() => { api.get(`/customers/${customer.id}`).then((r) => setData(r.data)).catch((e) => toast.error(apiErr(e))); }, [customer.id]);
@@ -128,8 +168,8 @@ function CustomerProfile({ customer, onClose, onStart }) {
         <div data-testid="customer-profile" className="space-y-5">
           <div className="flex gap-4 items-center">
             <Avatar src={data.photo} className="w-20 h-24 rounded-xl shrink-0" />
-            <div className="min-w-0">
-              <p className="font-semibold text-xl tracking-tight text-gray-900 truncate">{data.name}</p>
+            <div className="min-w-0 flex-1">
+              <NameEditor id={customer.id} name={data.name} canEdit={canEdit} onSaved={(name) => { setData({ ...data, name }); onRenamed(name); }} />
               <p className="text-gray-700 text-sm num">
                 <a href={`tel:${data.mobile}`} className="underline-offset-2 hover:underline">{data.mobile}</a>{data.mobile2 ? ` · ${data.mobile2}` : ""}
               </p>

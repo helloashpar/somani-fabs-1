@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from PIL import Image, ImageOps
 
+import brand
 import image_service
 import messaging
 import permissions
@@ -122,9 +123,48 @@ def verify_pw(p: str, h: str) -> bool:
 
 
 def make_token(user):
-    payload = {"sub": user["id"], "username": user["username"], "role": user["role"],
-               "exp": now_utc() + timedelta(days=7)}
+    payload = {"sub": user["id"], "role": user["role"], "exp": now_utc() + timedelta(days=7)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
+# ---------- Sign-in identity ----------
+# Admins sign in with their mobile number or email; there are no usernames.
+# Mobiles are Indian and stored as 10 digits, whatever way they are typed:
+# "+91 72299 00422", "917229900422", "07229900422" and "0091-7229900422" are
+# all 7229900422. Emails are stored lowercased.
+_MOBILE_RX = re.compile(r"[6-9]\d{9}")
+_EMAIL_RX = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+def normalize_mobile(value: Any) -> str:
+    """10-digit Indian mobile, or '' when `value` is not one."""
+    d = re.sub(r"\D", "", str(value or "")).lstrip("0")
+    if len(d) > 10 and d.startswith("91"):
+        d = d[2:].lstrip("0")
+    return d if _MOBILE_RX.fullmatch(d) else ""
+
+
+def normalize_email(value: Any) -> str:
+    e = str(value or "").strip().lower()
+    return e if len(e) <= 120 and _EMAIL_RX.fullmatch(e) else ""
+
+
+def login_query(identifier: str) -> Optional[Dict[str, str]]:
+    """Mongo filter for the admin a sign-in identifier names, or None."""
+    if "@" in identifier:
+        email = normalize_email(identifier)
+        return {"email": email} if email else None
+    mobile = normalize_mobile(identifier)
+    return {"mobile": mobile} if mobile else None
+
+
+def fmt_mobile(mobile: str) -> str:
+    return f"+91 {mobile[:5]} {mobile[5:]}" if len(mobile or "") == 10 else (mobile or "")
+
+
+def display_name(a: Dict[str, Any]) -> str:
+    """How an admin is named on screen and in logs."""
+    return (a.get("name") or "").strip() or fmt_mobile(a.get("mobile", "")) or a.get("email") or "Admin"
 
 
 async def get_current_user(request: Request):
@@ -143,16 +183,24 @@ async def get_current_user(request: Request):
         raise HTTPException(401, "User not found")
     if user.get("active") is False:
         raise HTTPException(401, "This account is turned off. Ask a super admin.")
+    user["name"] = display_name(user)
     return user
 
 
-OWNER_USERNAME = os.environ.get("SUPER_ADMIN_USERNAME", "")
+# The Owner: the first super admin, set in .env. Identified by mobile number.
+OWNER_MOBILE = normalize_mobile(os.environ.get("SUPER_ADMIN_MOBILE") or "7229900422")
+OWNER_EMAIL = normalize_email(os.environ.get("SUPER_ADMIN_EMAIL") or "ashwinipareek19@gmail.com")
+
+
+def is_owner(a: Dict[str, Any]) -> bool:
+    return bool(OWNER_MOBILE) and a.get("mobile") == OWNER_MOBILE
 
 
 def public_admin(a: Dict[str, Any]) -> Dict[str, Any]:
     """Admin as the app sees it: role, effective permissions, owner flag."""
-    return {"id": a["id"], "username": a["username"], "role": a["role"],
-            "active": a.get("active", True), "is_owner": a["username"] == OWNER_USERNAME,
+    return {"id": a["id"], "name": display_name(a), "full_name": a.get("name", ""),
+            "mobile": a.get("mobile", ""), "email": a.get("email", ""), "role": a["role"],
+            "active": a.get("active", True), "is_owner": is_owner(a),
             "permissions": permissions.effective(a), "created_at": a.get("created_at"),
             "created_by": a.get("created_by")}
 
@@ -162,14 +210,14 @@ messaging.init(db, get_current_user)
 
 async def log_action(user, action, details=""):
     await db.logs.insert_one({
-        "id": new_id(), "admin_id": user["id"], "admin_username": user["username"],
+        "id": new_id(), "admin_id": user["id"], "admin_username": user["name"],
         "action": action, "details": details, "timestamp": iso(),
     })
 
 
 # ---------- Models ----------
 class LoginIn(BaseModel):
-    username: str
+    login: str  # mobile number or email
     password: str
 
 
@@ -353,10 +401,11 @@ class FieldIn(BaseModel):
 
 
 # ---------- Auth ----------
-# Lock a username from one IP address after repeated wrong passwords. Keyed by
-# IP + username so a stranger cannot lock the owner out from their own phone.
+# Lock a sign-in name from one IP address after repeated wrong passwords. Keyed
+# by IP + mobile/email so a stranger cannot lock the owner out from their phone.
 LOGIN_MAX_FAILS = 5
 LOGIN_LOCK_MINUTES = 15
+LOGIN_WRONG = "Wrong mobile number / email or password"
 
 
 def _client_ip(request: Request) -> str:
@@ -366,13 +415,14 @@ def _client_ip(request: Request) -> str:
 
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
-    username = body.username.strip()
-    key = f"{_client_ip(request)}|{username.lower()}"
+    query = login_query(body.login.strip())
+    who = next(iter(query.values())) if query else body.login.strip().lower()
+    key = f"{_client_ip(request)}|{who}"
     since = now_utc() - timedelta(minutes=LOGIN_LOCK_MINUTES)
     attempts = await db.login_attempts.find_one({"key": key, "last": {"$gte": since}})
     if attempts and attempts.get("count", 0) >= LOGIN_MAX_FAILS:
         raise HTTPException(429, f"Too many wrong attempts. Try again in {LOGIN_LOCK_MINUTES} minutes.")
-    user = await db.admins.find_one({"username": username})
+    user = await db.admins.find_one(query) if query else None
     if not user or not verify_pw(body.password, user["password_hash"]):
         if attempts:
             await db.login_attempts.update_one(
@@ -380,13 +430,12 @@ async def login(body: LoginIn, request: Request):
         else:
             await db.login_attempts.update_one(
                 {"key": key}, {"$set": {"count": 1, "last": now_utc()}}, upsert=True)
-        raise HTTPException(401, "Invalid username or password")
+        raise HTTPException(401, LOGIN_WRONG)
     if user.get("active") is False:
         raise HTTPException(403, "This account is turned off. Ask a super admin.")
     await db.login_attempts.delete_one({"key": key})
-    u = {"id": user["id"], "username": user["username"], "role": user["role"]}
-    await log_action(u, "login", "Logged in")
-    return {"token": make_token(u), "user": {**public_admin(user), "app_language": await app_language()}}
+    await log_action({"id": user["id"], "name": display_name(user)}, "login", "Logged in")
+    return {"token": make_token(user), "user": {**public_admin(user), "app_language": await app_language()}}
 
 
 @api.get("/auth/me")
@@ -405,17 +454,23 @@ async def app_language() -> str:
 
 # ---------- Admin management ----------
 # Only super admins manage the team. Staff get exactly the permissions ticked
-# for them (see permissions.py); super admins have all of them. The Owner
-# (SUPER_ADMIN_USERNAME) can never be deleted, turned off or downgraded, and a
-# super admin cannot lock themselves out.
+# for them (see permissions.py); super admins have all of them. Every admin has
+# a mobile number (their sign-in) and may add an email as a second sign-in.
+# The Owner (SUPER_ADMIN_MOBILE) can never be deleted, turned off, downgraded
+# or edited in the app, and a super admin cannot lock themselves out.
 class AdminIn(BaseModel):
-    username: str
+    name: str = ""
+    mobile: str
+    email: str = ""
     password: str
     role: str = "admin"
     permissions: Dict[str, bool] = {}
 
 
 class AdminUpdate(BaseModel):
+    name: Optional[str] = None
+    mobile: Optional[str] = None
+    email: Optional[str] = None
     role: Optional[str] = None
     permissions: Optional[Dict[str, bool]] = None
     active: Optional[bool] = None
@@ -425,6 +480,37 @@ class AdminUpdate(BaseModel):
 def _check_password(pw: str):
     if len(pw) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
+
+
+def _clean_name(name: str) -> str:
+    name = " ".join((name or "").split())
+    if len(name) > 60:
+        raise HTTPException(400, "Name can be at most 60 characters")
+    return name
+
+
+def _clean_mobile(value: str) -> str:
+    mobile = normalize_mobile(value)
+    if not mobile:
+        raise HTTPException(400, "Enter a valid 10-digit Indian mobile number")
+    return mobile
+
+
+def _clean_email(value: str) -> str:
+    """'' when left empty; an error when filled in but not an email."""
+    if not (value or "").strip():
+        return ""
+    email = normalize_email(value)
+    if not email:
+        raise HTTPException(400, "Enter a valid email address, or leave it empty")
+    return email
+
+
+async def _check_unique(mobile: str = "", email: str = "", exclude: str = ""):
+    if mobile and await db.admins.find_one({"mobile": mobile, "id": {"$ne": exclude}}):
+        raise HTTPException(400, "Another admin already uses this mobile number")
+    if email and await db.admins.find_one({"email": email, "id": {"$ne": exclude}}):
+        raise HTTPException(400, "Another admin already uses this email")
 
 
 @api.get("/permissions")
@@ -442,19 +528,19 @@ async def list_admins(user=Depends(get_current_user)):
 @api.post("/admins")
 async def create_admin(body: AdminIn, user=Depends(get_current_user)):
     permissions.require_super(user)
-    username = body.username.strip()
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", username):
-        raise HTTPException(400, "Username must be 3-32 letters, numbers, dot, dash or underscore")
+    name, mobile, email = _clean_name(body.name), _clean_mobile(body.mobile), _clean_email(body.email)
     _check_password(body.password)
     if body.role not in ("admin", "super"):
         raise HTTPException(400, "Role must be staff or super admin")
-    if await db.admins.find_one({"username": username}):
-        raise HTTPException(400, "Username already exists")
-    doc = {"id": new_id(), "username": username, "password_hash": hash_pw(body.password),
-           "role": body.role, "active": True, "created_at": iso(), "created_by": user["username"],
+    await _check_unique(mobile, email)
+    doc = {"id": new_id(), "name": name, "mobile": mobile, "password_hash": hash_pw(body.password),
+           "role": body.role, "active": True, "created_at": iso(), "created_by": user["name"],
            "permissions": {} if body.role == "super" else permissions.clean(body.permissions)}
+    if email:
+        doc["email"] = email
     await db.admins.insert_one(doc)
-    await log_action(user, "create_admin", f"Created {'super admin' if body.role == 'super' else 'staff'} {username}")
+    await log_action(user, "create_admin",
+                     f"Created {'super admin' if body.role == 'super' else 'staff'} {display_name(doc)}")
     return public_admin(doc)
 
 
@@ -464,33 +550,53 @@ async def update_admin(admin_id: str, body: AdminUpdate, user=Depends(get_curren
     target = await db.admins.find_one({"id": admin_id}, {"_id": 0})
     if not target:
         raise HTTPException(404, "Admin not found")
-    is_owner = target["username"] == OWNER_USERNAME
+    owner = is_owner(target)
     self_edit = target["id"] == user["id"]
     upd: Dict[str, Any] = {}
+    unset: Dict[str, str] = {}
+    if body.name is not None and _clean_name(body.name) != target.get("name", ""):
+        upd["name"] = _clean_name(body.name)
+    if body.mobile is not None and normalize_mobile(body.mobile) != target.get("mobile", ""):
+        if owner:
+            raise HTTPException(400, "The owner's mobile number is set in the server settings (.env)")
+        upd["mobile"] = _clean_mobile(body.mobile)
+    if body.email is not None and _clean_email(body.email) != target.get("email", ""):
+        if owner:
+            raise HTTPException(400, "The owner's email is set in the server settings (.env)")
+        email = _clean_email(body.email)
+        if email:
+            upd["email"] = email
+        else:
+            unset["email"] = ""
+    await _check_unique(upd.get("mobile", ""), upd.get("email", ""), exclude=admin_id)
     if body.role is not None and body.role != target["role"]:
         if body.role not in ("admin", "super"):
             raise HTTPException(400, "Role must be staff or super admin")
-        if is_owner or self_edit:
+        if owner or self_edit:
             raise HTTPException(400, "The owner's role, and your own, cannot be changed")
         upd["role"] = body.role
     if body.active is not None and body.active != target.get("active", True):
-        if is_owner or self_edit:
+        if owner or self_edit:
             raise HTTPException(400, "The owner, and your own account, cannot be turned off")
         upd["active"] = body.active
     if body.permissions is not None:
         upd["permissions"] = permissions.clean(body.permissions)
     if body.password:
-        if is_owner:
+        if owner:
             raise HTTPException(400, "The owner's password is set in the server settings (.env)")
         _check_password(body.password)
         upd["password_hash"] = hash_pw(body.password)
-    if not upd:
+    if not upd and not unset:
         return public_admin(target)
     upd["updated_at"] = iso()
-    await db.admins.update_one({"id": admin_id}, {"$set": upd})
-    changes = ", ".join(k for k in upd if k not in ("updated_at", "password_hash")) + (", password" if "password_hash" in upd else "")
-    await log_action(user, "edit_admin", f"{target['username']}: {changes}")
-    return public_admin({**target, **upd})
+    await db.admins.update_one({"id": admin_id}, {"$set": upd, **({"$unset": unset} if unset else {})})
+    changes = [k for k in [*upd, *unset] if k not in ("updated_at", "password_hash")]
+    changes += ["password"] if "password_hash" in upd else []
+    await log_action(user, "edit_admin", f"{display_name(target)}: {', '.join(changes)}")
+    after = {**target, **upd}
+    for k in unset:
+        after.pop(k, None)
+    return public_admin(after)
 
 
 @api.delete("/admins/{admin_id}")
@@ -499,12 +605,12 @@ async def delete_admin(admin_id: str, user=Depends(get_current_user)):
     target = await db.admins.find_one({"id": admin_id})
     if not target:
         raise HTTPException(404, "Admin not found")
-    if target["username"] == OWNER_USERNAME:
+    if is_owner(target):
         raise HTTPException(400, "The owner account cannot be deleted")
     if target["id"] == user["id"]:
         raise HTTPException(400, "You cannot delete your own account")
     await db.admins.delete_one({"id": admin_id})
-    await log_action(user, "delete_admin", f"Deleted admin {target['username']}")
+    await log_action(user, "delete_admin", f"Deleted admin {display_name(target)}")
     return {"ok": True}
 
 
@@ -694,13 +800,14 @@ async def export_customers(user=Depends(get_current_user)):
             row[k] = extra.get(k, "")
         rows.append(row)
     df = pd.DataFrame(rows)
+    shop = (await current_brand())["shop_name"]
     buf = io.BytesIO()
     df.to_excel(buf, index=False)
     buf.seek(0)
     await log_action(user, "export_customers", f"Exported {len(rows)} customers")
     return StreamingResponse(
         buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=somani_customers.xlsx"})
+        headers={"Content-Disposition": f"attachment; filename={brand.slug(shop)}_customers.xlsx"})
 
 
 @api.put("/customers/{customer_id}/dates")
@@ -715,6 +822,29 @@ async def set_customer_dates(customer_id: str, body: Dict[str, Any], user=Depend
         raise HTTPException(404, "Customer not found")
     await log_action(user, "edit_customer_dates", customer_id)
     return {"ok": True}
+
+
+@api.put("/customers/{customer_id}")
+async def edit_customer(customer_id: str, body: Dict[str, Any], user=Depends(get_current_user)):
+    """Correct a customer's name. The mobile number is who they are and stays."""
+    permissions.require(user, "customers_edit")
+    name = " ".join(str(body.get("name") or "").split())
+    if not name:
+        raise HTTPException(400, "Name is required")
+    if len(name) > 80:
+        raise HTTPException(400, "Name can be at most 80 characters")
+    c = await db.customers.find_one({"id": customer_id}, {"_id": 0, "name": 1})
+    if not c:
+        raise HTTPException(404, "Customer not found")
+    if c.get("name") != name:
+        await db.customers.update_one({"id": customer_id}, {"$set": {"name": name}})
+        # Sessions and the shop screen show the name they were started with.
+        await db.sessions.update_many({"customer_id": customer_id}, {"$set": {"customer_name": name}})
+        sids = [s["id"] async for s in db.sessions.find({"customer_id": customer_id}, {"_id": 0, "id": 1})]
+        if sids:
+            await db.live_previews.update_many({"session_id": {"$in": sids}}, {"$set": {"customer_name": name}})
+        await log_action(user, "edit_customer", f"{c.get('name')} -> {name}")
+    return {"ok": True, "name": name}
 
 
 @api.get("/customers/{customer_id}")
@@ -781,12 +911,12 @@ async def create_session(body: SessionIn, user=Depends(get_current_user)):
         "has_photo": bool(photo),
         "extra": body.extra, "status": "active", "start_time": iso(), "end_time": None,
         "purchased": None, "total_value": 0, "discount": 0, "final_paid": 0,
-        "admin_id": user["id"], "admin_username": user["username"],
+        "admin_id": user["id"], "admin_username": user["name"],
         "wa_phone": messaging.to_e164(body.mobile), "wa_consent": body.wa_consent}
     await db.sessions.insert_one(doc)
     await log_action(user, "create_session", f"{body.customer_name} ({body.mobile})")
     if body.wa_consent is not None:
-        await messaging.record_consent(doc["wa_phone"], customer_id, body.wa_consent, user["username"])
+        await messaging.record_consent(doc["wa_phone"], customer_id, body.wa_consent, user["name"])
     messaging.on_session_created(doc)
     doc.pop("_id", None)
     return doc
@@ -1308,8 +1438,57 @@ async def delete_field(fid: str, user=Depends(get_current_user)):
 # ---------- Settings (idle image, display secret) ----------
 @api.get("/settings")
 async def get_settings(user=Depends(get_current_user)):
-    s = await db.settings.find_one({"id": "global"}, {"_id": 0})
+    s = await db.settings.find_one({"id": "global"}, {"_id": 0, "brand_logo": 0})
     return s or {}
+
+
+# ---------- General (shop name, logo, contact, website) ----------
+async def current_brand() -> Dict[str, Any]:
+    s = await db.settings.find_one({"id": "global"}, {"_id": 0, "brand": 1, "brand_logo_v": 1}) or {}
+    out = brand.merged(s.get("brand"))
+    v = s.get("brand_logo_v") or ""
+    out["logo"] = f"/api/public/logo?v={v}" if v else ""
+    return out
+
+
+@api.get("/public/brand")
+async def public_brand():
+    """What the public site, login screen and shop screen show. No sign-in needed."""
+    return await current_brand()
+
+
+@api.get("/public/logo")
+async def public_logo(v: Optional[str] = None):
+    s = await db.settings.find_one({"id": "global"}, {"_id": 0, "brand_logo": 1}) or {}
+    logo = s.get("brand_logo") or ""
+    if not logo:
+        raise HTTPException(404, "No logo")
+    raw = base64.b64decode(logo.split(",", 1)[1])
+    # The URL carries the logo's version, so browsers may keep it for a long time.
+    cache = "public, max-age=31536000, immutable" if v else "public, max-age=300"
+    return Response(content=raw, media_type="image/png", headers={"Cache-Control": cache})
+
+
+@api.put("/settings/brand")
+async def update_brand(body: Dict[str, Any], user=Depends(get_current_user)):
+    permissions.require(user, "settings_manage")
+    fields = brand.clean(body)
+    upd: Dict[str, Any] = {f"brand.{k}": v for k, v in fields.items()}
+    if "logo" in body:
+        logo = body.get("logo") or ""
+        if logo.startswith("/api/public/logo"):
+            pass  # unchanged
+        elif logo:
+            png = await asyncio.to_thread(brand.logo_image, logo)
+            upd.update(brand_logo=png, brand_logo_v=brand.logo_version(png))
+        else:
+            upd.update(brand_logo="", brand_logo_v="")
+    if not upd:
+        raise HTTPException(400, "Nothing to update")
+    await db.settings.update_one({"id": "global"}, {"$set": upd}, upsert=True)
+    await log_action(user, "update_general", ", ".join(sorted(
+        {k.split(".", 1)[-1] for k in upd if k != "brand_logo_v"})))
+    return await current_brand()
 
 
 def _watermark_settings(body: Dict[str, Any]) -> Dict[str, str]:
@@ -1396,7 +1575,7 @@ async def set_preview(body: Dict[str, str], user=Depends(get_current_user)):
     await db.live_previews.update_one(
         {"admin_id": user["id"]},
         {"$set": {
-            "admin_id": user["id"], "admin_username": user["username"], "session_id": sid,
+            "admin_id": user["id"], "admin_username": user["name"], "session_id": sid,
             "customer_name": session.get("customer_name", ""),
             "start_time": session.get("start_time", ""), "updated_at": iso(), **fields},
          "$setOnInsert": {"started_at": iso()}},
@@ -1502,7 +1681,7 @@ async def get_logs(limit: int = 300, user=Depends(get_current_user)):
 
 @api.get("/")
 async def root():
-    return {"message": "Somani Fabs API"}
+    return {"message": "Shop API"}
 
 
 @app.get("/health")
@@ -1663,25 +1842,55 @@ async def _categories_to_kinds(cats):
             "kind": "group", "position": "", "items": [], "members": members}})
 
 
+async def _migrate_admin_identity():
+    """Usernames are gone: admins sign in with mobile or email. Old accounts
+    keep their username as their display name until a mobile is added."""
+    try:
+        if "username_1" in await db.admins.index_information():
+            await db.admins.drop_index("username_1")
+    except Exception as e:
+        logger.warning("Could not drop the old username index: %s", e)
+        return
+    async for a in db.admins.find({"username": {"$exists": True}}, {"_id": 0, "id": 1, "username": 1, "name": 1}):
+        await db.admins.update_one({"id": a["id"]}, {
+            "$set": {"name": a.get("name") or a["username"]}, "$unset": {"username": ""}})
+
+
+async def _seed_owner():
+    """The Owner account from .env: super admin, active, password from .env."""
+    su_pass = os.environ["SUPER_ADMIN_PASSWORD"]
+    if not OWNER_MOBILE:
+        logger.error("SUPER_ADMIN_MOBILE is not a valid Indian mobile number; owner not seeded")
+        return
+    owner = await db.admins.find_one({"mobile": OWNER_MOBILE})
+    legacy = os.environ.get("SUPER_ADMIN_USERNAME", "").strip()
+    if not owner and legacy:
+        # The owner from before mobile sign-in: give that account the mobile.
+        owner = await db.admins.find_one({"name": legacy, "mobile": {"$exists": False}})
+    upd = {"mobile": OWNER_MOBILE, "role": "super", "active": True, "permissions": {}}
+    if OWNER_EMAIL:
+        upd["email"] = OWNER_EMAIL
+        # The email belongs to the owner now, not to whoever had it before.
+        await db.admins.update_many({"email": OWNER_EMAIL, "mobile": {"$ne": OWNER_MOBILE}},
+                                    {"$unset": {"email": ""}})
+    if not owner:
+        await db.admins.insert_one({"id": new_id(), "name": "", "password_hash": hash_pw(su_pass),
+                                    "created_at": iso(), "created_by": "system", **upd})
+        return
+    if not verify_pw(su_pass, owner["password_hash"]):
+        upd["password_hash"] = hash_pw(su_pass)
+    await db.admins.update_one({"id": owner["id"]}, {"$set": upd})
+
+
 async def _seed_database():
     import secrets as _secrets
-    # seed super admin
-    su_user = os.environ["SUPER_ADMIN_USERNAME"]
-    su_pass = os.environ["SUPER_ADMIN_PASSWORD"]
-    existing = await db.admins.find_one({"username": su_user})
-    if not existing:
-        await db.admins.insert_one({
-            "id": new_id(), "username": su_user, "password_hash": hash_pw(su_pass),
-            "role": "super", "created_at": iso(), "created_by": "system"})
-    elif not verify_pw(su_pass, existing["password_hash"]):
-        await db.admins.update_one({"username": su_user},
-                                   {"$set": {"password_hash": hash_pw(su_pass)}})
+    await _migrate_admin_identity()
+    await _seed_owner()
     # seed categories
     if await db.categories.count_documents({}) == 0:
         for c in DEFAULT_CATEGORIES:
             await db.categories.insert_one({"id": new_id(), **c})
     await _upgrade_item_descriptions()
-    await db.admins.update_one({"username": su_user}, {"$set": {"role": "super", "active": True}})
     await permissions.migrate(db)
     await _migrate_category_kinds()
     # settings + display secret
@@ -1689,7 +1898,8 @@ async def _seed_database():
     if not s:
         await db.settings.insert_one({
             "id": "global", "display_secret": _secrets.token_urlsafe(16),
-            "idle_image": "", "watermark_text": watermark.DEFAULT_TEXT})
+            "idle_image": "", "watermark_text": watermark.DEFAULT_TEXT,
+            "brand": {}, "brand_logo": "", "brand_logo_v": ""})
     elif "watermark_text" not in s:
         await db.settings.update_one({"id": "global"}, {"$set": {"watermark_text": watermark.DEFAULT_TEXT}})
     elif "watermark_subtext" in s:
@@ -1711,7 +1921,10 @@ async def _seed_database():
         await db.login_attempts.create_index(
             "last", expireAfterSeconds=LOGIN_LOCK_MINUTES * 60)
         await messaging.ensure_indexes()
-        await db.admins.create_index("username", unique=True)
+        await db.admins.create_index("mobile", unique=True,
+                                     partialFilterExpression={"mobile": {"$type": "string"}})
+        await db.admins.create_index("email", unique=True,
+                                     partialFilterExpression={"email": {"$type": "string"}})
     except Exception as e:
         logger.warning("Index creation failed: %s", e)
     await expire_stale_trials()

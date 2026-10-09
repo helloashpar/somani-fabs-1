@@ -8,7 +8,7 @@ feature. The code is the source of truth: `backend/permissions.py` (server) and
 
 | Role | Who | Can do |
 |---|---|---|
-| **Owner** | The account named by `SUPER_ADMIN_USERNAME` in the server `.env` | Everything. Always a super admin, always active. Cannot be deleted, turned off or downgraded. Its password is set in `.env` (reset on every server start), not in the app. |
+| **Owner** | The account with the mobile number `SUPER_ADMIN_MOBILE` in the server `.env` | Everything. Always a super admin, always active. Cannot be deleted, turned off or downgraded. Its password is set in `.env` (reset on every server start), not in the app. |
 | **Super admin** | Created by a super admin | Everything, including every future feature, and **managing the team**: add, edit, turn off, delete admins; make other super admins. |
 | **Staff** | Created by a super admin | Exactly the permissions ticked in their access matrix. |
 

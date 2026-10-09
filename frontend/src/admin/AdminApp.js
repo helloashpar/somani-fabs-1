@@ -12,18 +12,27 @@ import NewSession, { prefetchSessionConfig } from "@/admin/NewSession";
 import { loadCatalog, loadCategories } from "@/lib/catalog";
 import { can } from "@/admin/perms";
 import { Button, Field, IconButton, inputCls } from "@/admin/ui";
+import { useBrand } from "@/lib/brand";
 
-// The shop wordmark (Playfair) in the brand ink colour.
-function Wordmark({ className = "" }) {
-  return <span className={`font-black text-brand-900 tracking-tight ${className}`} style={{ fontFamily: "Playfair Display, serif" }}>Somani Fabs</span>;
+// The shop's logo (if any) and name (Playfair) in the brand ink colour.
+// Both come from Shop setup > General.
+function Wordmark({ className = "", logo = "h-8 w-8" }) {
+  const brand = useBrand();
+  return (
+    <span className="inline-flex items-center gap-2.5 min-w-0">
+      {brand.logo_src && <img src={brand.logo_src} alt="" className={`${logo} object-contain rounded-lg shrink-0`} />}
+      <span className={`font-black text-brand-900 tracking-tight truncate ${className}`} style={{ fontFamily: "Playfair Display, serif" }}>{brand.shop_name}</span>
+    </span>
+  );
 }
 
 const LOGIN_PHOTO = "https://images.pexels.com/photos/6766360/pexels-photo-6766360.jpeg?auto=compress&cs=tinysrgb&w=1600";
 const LAST_USER = "sf_last_user";
 function lastUser() { try { return localStorage.getItem(LAST_USER) || ""; } catch { return ""; } }
 
-// Sign-in. The last username is remembered on this device, so staff usually
-// only type the password. Password managers and paste work.
+// Sign-in with a mobile number (any format: 72299 00422, +91..., 0...) or an
+// email. The last one used is remembered on this device, so staff usually only
+// type the password. Password managers and paste work.
 function Login({ onLogin }) {
   const { t } = useLang();
   const remembered = lastUser();
@@ -39,7 +48,7 @@ function Login({ onLogin }) {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.post("/auth/login", { username: u.trim(), password: p });
+      const { data } = await api.post("/auth/login", { login: u.trim(), password: p });
       setToken(data.token);
       try { localStorage.setItem(LAST_USER, u.trim()); } catch { /* storage off */ }
       onLogin(data.user);
@@ -61,12 +70,13 @@ function Login({ onLogin }) {
       </div>
       <div className="flex flex-col justify-center px-6 pt-[max(3rem,env(safe-area-inset-top))] pb-10">
         <div className="w-full max-w-sm mx-auto">
-          <Wordmark className="text-[32px]" />
+          <Wordmark className="text-[32px]" logo="h-12 w-12" />
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900 mt-10">{t("login_title")}</h1>
           <p className="text-gray-600 mt-1">{t("login_sub")}</p>
           <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
-            <Field label={t("username")}>
+            <Field label={t("login_id")} hint={t("login_id_hint")}>
               <input data-testid="login-username" value={u} onChange={(e) => setU(e.target.value)} autoFocus={!remembered}
+                type="text" placeholder="98765 43210"
                 autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" enterKeyHint="next" className={inputCls} />
             </Field>
             <Field label={t("password")}>
@@ -156,9 +166,9 @@ function Sidebar({ user, route, group, go, onNew, logout }) {
         )}
       </nav>
       <div className="border-t border-gray-100 p-3 flex items-center gap-2">
-        <span className="w-9 h-9 rounded-full bg-brand-700 text-white text-sm font-semibold flex items-center justify-center shrink-0" aria-hidden="true">{initials(user.username)}</span>
+        <span className="w-9 h-9 rounded-full bg-brand-700 text-white text-sm font-semibold flex items-center justify-center shrink-0" aria-hidden="true">{initials(user.name)}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{user.username}</p>
+          <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
           <p className="text-xs text-gray-600">{user.is_owner ? t("role_owner") : user.role === "super" ? t("role_super") : t("role_staff")}</p>
         </div>
         <IconButton data-testid="logout-btn-desktop" icon={LogOut} label={t("logout")} onClick={logout} />

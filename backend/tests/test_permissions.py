@@ -11,8 +11,11 @@ import permissions
 import server
 
 
-async def add_admin(db, username, role="admin", perms=None, active=True):
-    doc = {"id": f"id-{username}", "username": username, "role": role, "active": active,
+MOBILES = {"ravi": "9800000001", "neha": "9800000002", "old": "9800000003"}
+
+
+async def add_admin(db, name, role="admin", perms=None, active=True, mobile=None):
+    doc = {"id": f"id-{name}", "name": name, "mobile": mobile or MOBILES[name], "role": role, "active": active,
            "password_hash": server.hash_pw("password123"), "created_at": server.iso(),
            "permissions": perms if perms is not None else ({} if role == "super" else permissions.staff_defaults())}
     await db.admins.insert_one(doc)
@@ -23,7 +26,7 @@ async def add_admin(db, username, role="admin", perms=None, active=True):
 async def env(monkeypatch):
     db = AsyncMongoMockClient()["perm_test"]
     monkeypatch.setattr(server, "db", db)
-    owner = await add_admin(db, server.OWNER_USERNAME, "super")
+    owner = await add_admin(db, "owner", "super", mobile=server.OWNER_MOBILE)
     staff = await add_admin(db, "ravi")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url="http://t") as c:
         yield c, db, owner, staff
@@ -66,22 +69,23 @@ async def test_granted_permission_works_at_once(env):
 async def test_only_super_admins_manage_the_team(env):
     c, db, owner, staff = env
     assert (await c.get("/api/admins", headers=staff)).status_code == 403
-    assert (await c.post("/api/admins", headers=staff, json={"username": "x1x", "password": "password123"})).status_code == 403
-    r = await c.post("/api/admins", headers=owner, json={"username": "neha", "password": "password123", "role": "super"})
+    assert (await c.post("/api/admins", headers=staff, json={"mobile": "9811111111", "password": "password123"})).status_code == 403
+    r = await c.post("/api/admins", headers=owner, json={"name": "Neha", "mobile": "+91 98111 11112", "password": "password123", "role": "super"})
     assert r.status_code == 200 and r.json()["role"] == "super" and all(r.json()["permissions"].values())
-    r = await c.post("/api/admins", headers=owner, json={"username": "amit", "password": "password123",
+    r = await c.post("/api/admins", headers=owner, json={"mobile": "9811111113", "password": "password123",
                                                          "permissions": {"stats_view": True}})
     perms = r.json()["permissions"]
     assert perms["stats_view"] is True and perms["sessions_manage"] is True and perms["history_edit"] is False
     team = (await c.get("/api/admins", headers=owner)).json()
-    assert [a["is_owner"] for a in team if a["username"] == server.OWNER_USERNAME] == [True]
+    assert [a["is_owner"] for a in team if a["mobile"] == server.OWNER_MOBILE] == [True]
+    assert [a["mobile"] for a in team if a["name"] == "Neha"] == ["9811111112"]
 
 
 async def test_owner_and_self_are_protected(env):
     c, db, owner, staff = env
-    oid = f"id-{server.OWNER_USERNAME}"
+    oid = "id-owner"
     neha = await add_admin(db, "neha", "super")
-    for body in ({"role": "admin"}, {"active": False}, {"password": "newpassword1"}):
+    for body in ({"role": "admin"}, {"active": False}, {"password": "newpassword1"}, {"mobile": "9822222222"}):
         assert (await c.put(f"/api/admins/{oid}", headers=neha, json=body)).status_code == 400
     assert (await c.delete(f"/api/admins/{oid}", headers=neha)).status_code == 400
     assert (await c.put("/api/admins/id-neha", headers=neha, json={"role": "admin"})).status_code == 400
@@ -94,7 +98,7 @@ async def test_turned_off_account_is_locked_out(env):
     c, db, owner, staff = env
     assert (await c.put("/api/admins/id-ravi", headers=owner, json={"active": False})).status_code == 200
     assert (await c.get("/api/auth/me", headers=staff)).status_code == 401
-    r = await c.post("/api/auth/login", json={"username": "ravi", "password": "password123"})
+    r = await c.post("/api/auth/login", json={"login": "9800000001", "password": "password123"})
     assert r.status_code == 403
 
 
@@ -102,7 +106,7 @@ async def test_password_reset_by_super_admin(env):
     c, db, owner, staff = env
     assert (await c.put("/api/admins/id-ravi", headers=owner, json={"password": "short"})).status_code == 400
     assert (await c.put("/api/admins/id-ravi", headers=owner, json={"password": "brandnew99"})).status_code == 200
-    r = await c.post("/api/auth/login", json={"username": "ravi", "password": "brandnew99"})
+    r = await c.post("/api/auth/login", json={"login": "+91 98000 00001", "password": "brandnew99"})
     assert r.status_code == 200 and r.json()["user"]["permissions"]["sessions_manage"] is True
 
 
@@ -118,7 +122,7 @@ async def test_migrate_fills_only_missing_permissions(env, monkeypatch):
     assert old["permissions"]["history_edit"] is True             # kept
     assert old["permissions"]["sessions_manage"] is True           # existing default
     assert old["permissions"]["future_feature"] is False           # `existing`, not `staff`
-    owner_doc = await db.admins.find_one({"username": server.OWNER_USERNAME})
+    owner_doc = await db.admins.find_one({"mobile": server.OWNER_MOBILE})
     assert owner_doc["permissions"] == {}                          # super admins untouched
 
 
@@ -153,3 +157,97 @@ async def test_shop_language_is_global(env):
     assert (await c.put("/api/settings", headers=owner, json={"app_language": "klingon"})).status_code == 400
     assert (await c.put("/api/settings", headers=owner, json={"app_language": "english"})).status_code == 200
     assert (await c.get("/api/auth/me", headers=staff)).json()["app_language"] == "english"
+
+
+async def test_login_with_mobile_in_any_format_or_email(env):
+    c, db, owner, staff = env
+    await db.admins.update_one({"id": "id-ravi"}, {"$set": {"email": "ravi@shop.in"}})
+    for login in ("9800000001", "+91 98000 00001", "+919800000001", "919800000001", "09800000001",
+                  "0091-98000-00001", " RAVI@Shop.in "):
+        r = await c.post("/api/auth/login", json={"login": login, "password": "password123"})
+        assert r.status_code == 200, login
+        assert r.json()["user"]["name"] == "ravi"
+    for login in ("ravi", "98000", "someone@shop.in"):
+        r = await c.post("/api/auth/login", json={"login": login, "password": "password123"})
+        assert r.status_code == 401, login
+
+
+async def test_admin_mobile_required_email_optional_and_unique(env):
+    c, db, owner, staff = env
+    base = {"password": "password123"}
+    assert (await c.post("/api/admins", headers=owner, json={**base, "mobile": ""})).status_code == 400
+    assert (await c.post("/api/admins", headers=owner, json={**base, "mobile": "12345"})).status_code == 400
+    assert (await c.post("/api/admins", headers=owner, json={**base, "mobile": "9833333333", "email": "nope"})).status_code == 400
+    r = await c.post("/api/admins", headers=owner, json={**base, "mobile": "9833333333", "email": "A@B.co"})
+    assert r.status_code == 200 and r.json()["email"] == "a@b.co" and r.json()["name"] == "+91 98333 33333"
+    # Same mobile (typed differently) or same email: refused.
+    assert (await c.post("/api/admins", headers=owner, json={**base, "mobile": "+91 98333-33333"})).status_code == 400
+    assert (await c.post("/api/admins", headers=owner, json={**base, "mobile": "9844444444", "email": "a@b.co"})).status_code == 400
+    # Email can be removed, mobile changed.
+    aid = r.json()["id"]
+    r = await c.put(f"/api/admins/{aid}", headers=owner, json={"email": "", "mobile": "9855555555", "name": "Amit"})
+    assert r.status_code == 200 and r.json()["email"] == "" and r.json()["mobile"] == "9855555555"
+    assert "email" not in await db.admins.find_one({"id": aid})
+
+
+async def test_migration_turns_usernames_into_names(env, monkeypatch):
+    c, db, owner, staff = env
+    await db.admins.delete_many({})
+    await db.admins.insert_one({"id": "legacy-owner", "username": "boss", "role": "super",
+                                "password_hash": server.hash_pw("old"), "created_at": server.iso()})
+    await db.admins.insert_one({"id": "legacy-staff", "username": "ravi", "role": "admin",
+                                "password_hash": server.hash_pw("x"), "created_at": server.iso()})
+    monkeypatch.setenv("SUPER_ADMIN_USERNAME", "boss")
+    await server._migrate_admin_identity()
+    await server._seed_owner()
+    boss = await db.admins.find_one({"id": "legacy-owner"})
+    assert boss["mobile"] == server.OWNER_MOBILE and boss["email"] == server.OWNER_EMAIL and boss["name"] == "boss"
+    assert "username" not in boss and server.verify_pw(server.os.environ["SUPER_ADMIN_PASSWORD"], boss["password_hash"])
+    ravi = await db.admins.find_one({"id": "legacy-staff"})
+    assert ravi["name"] == "ravi" and "username" not in ravi and "mobile" not in ravi
+    assert await db.admins.count_documents({}) == 2
+
+
+async def test_customer_name_can_be_corrected(env):
+    c, db, owner, staff = env
+    await db.customers.insert_one({"id": "c1", "name": "Rames", "mobile": "9000011111"})
+    await db.sessions.insert_one({"id": "s1", "customer_id": "c1", "customer_name": "Rames", "status": "active",
+                                  "start_time": server.iso()})
+    await db.live_previews.insert_one({"admin_id": "a", "session_id": "s1", "customer_name": "Rames"})
+    assert (await c.put("/api/customers/c1", headers=staff, json={"name": "  "})).status_code == 400
+    r = await c.put("/api/customers/c1", headers=staff, json={"name": " Ramesh  Kumar "})
+    assert r.status_code == 200 and r.json()["name"] == "Ramesh Kumar"
+    assert (await db.customers.find_one({"id": "c1"}))["name"] == "Ramesh Kumar"
+    assert (await db.sessions.find_one({"id": "s1"}))["customer_name"] == "Ramesh Kumar"
+    assert (await db.live_previews.find_one({"session_id": "s1"}))["customer_name"] == "Ramesh Kumar"
+    no_edit = await add_admin(db, "old", perms={**permissions.staff_defaults(), "customers_edit": False})
+    assert (await c.put("/api/customers/c1", headers=no_edit, json={"name": "X"})).status_code == 403
+
+
+async def test_general_settings_are_public_and_validated(env):
+    c, db, owner, staff = env
+    await db.settings.insert_one({"id": "global", "display_secret": "s"})
+    r = await c.get("/api/public/brand")
+    assert r.status_code == 200 and r.json()["shop_name"] == "Somani Fabs" and r.json()["logo"] == ""
+    assert (await c.put("/api/settings/brand", headers=staff, json={"shop_name": "X"})).status_code == 403
+    for bad in ({"shop_name": ""}, {"accent_color": "red"}, {"founded_year": "62"},
+                {"instagram": "instagram.com/x"}, {"phones": ["abc"]}, {"logo": "data:image/png;base64,xx"}):
+        assert (await c.put("/api/settings/brand", headers=owner, json=bad)).status_code == 400, bad
+    import base64, io
+    from PIL import Image
+    buf = io.BytesIO(); Image.new("RGBA", (1200, 600), (200, 0, 0, 128)).save(buf, format="PNG")
+    logo = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    r = await c.put("/api/settings/brand", headers=owner, json={
+        "shop_name": "Pareek Textiles", "accent_color": "#1a2b3c", "phones": ["+91 98000 00009"],
+        "whatsapp": "98000 00009", "instagram": "https://instagram.com/pareek", "logo": logo})
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["shop_name"] == "Pareek Textiles" and b["accent_color"] == "#1A2B3C" and b["whatsapp"] == "+919800000009"
+    assert b["phones"] == ["+91 98000 00009"] and b["city"] == "Kuchaman City"  # untouched fields keep defaults
+    assert b["logo"].startswith("/api/public/logo?v=")
+    img = await c.get(b["logo"])
+    assert img.status_code == 200 and img.headers["content-type"] == "image/png"
+    assert max(Image.open(io.BytesIO(img.content)).size) == 512
+    assert "brand_logo" not in (await c.get("/api/settings", headers=staff)).json()
+    r = await c.put("/api/settings/brand", headers=owner, json={"logo": ""})
+    assert r.json()["logo"] == "" and (await c.get("/api/public/logo")).status_code == 404
