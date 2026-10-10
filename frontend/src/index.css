@@ -135,3 +135,9 @@ body {
   .site .s-marquee:hover { animation-play-state: paused; }
   .site .s-float { animation: s-float 5s ease-in-out infinite; }
 }
+
+/* Website builder: a section's soft decorative shapes can be switched off,
+   and shop details (from General) show they open there when tapped. */
+.site [data-plain] .s-decor { display: none; }
+.site [data-general] { cursor: pointer; border-radius: 6px; transition: box-shadow .15s; }
+.site [data-general]:hover { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #f59e0b; }

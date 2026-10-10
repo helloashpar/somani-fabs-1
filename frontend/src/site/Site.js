@@ -7,6 +7,7 @@ import { SiteCtx, SectionCtx } from "@/site/kit";
 import { RENDER, Floating } from "@/site/sections";
 import { resolveTheme, themeVars, loadFont } from "@/site/theme";
 import Landing from "@/pages/Landing";
+import { isMultilingual } from "@/site/presets";
 
 // Draws a builder website from its config. Used by the live site (/), the
 // builder's preview frame (/site-frame) and the draft preview (/site-preview/:id).
@@ -22,11 +23,11 @@ class Guard extends React.Component {
   render() { return this.state.failed ? null : this.props.children; }
 }
 
-export function SiteView({ config, brand, lang, setLang, editing = false, selected = null, send = () => {} }) {
+export function SiteView({ config, brand, lang, setLang, editing = false, selected = null, send = () => {}, ui }) {
   const theme = useMemo(() => resolveTheme(config.theme), [config.theme]);
   const vars = useMemo(() => themeVars(config.theme), [config.theme]);
   useEffect(() => { loadFont(theme.font); }, [theme.font]);
-  const ctx = { brand, lang, setLang, config, theme, editing, selected, send };
+  const ctx = { brand, lang, setLang, config, theme, editing, selected, send, ui };
   const sections = (config.sections || []).filter((s) => !s.hidden && RENDER[s.type]);
   return (
     <SiteCtx.Provider value={ctx}>
@@ -37,7 +38,7 @@ export function SiteView({ config, brand, lang, setLang, editing = false, select
           return <Guard key={s.id} section={s}><SectionCtx.Provider value={s}><C s={s} /></SectionCtx.Provider></Guard>;
         })}
         {!sections.length && editing && (
-          <div className="grid min-h-[60vh] place-items-center p-10 text-center text-[var(--s-muted)]">Add a section from the panel to start.</div>
+          <div className="grid min-h-[60vh] place-items-center p-10 text-center text-[var(--s-muted)]">{(ui && ui.empty) || "Add a section from the panel to start."}</div>
         )}
         <Floating />
       </div>
@@ -46,6 +47,7 @@ export function SiteView({ config, brand, lang, setLang, editing = false, select
 }
 
 function initialLang(config) {
+  if (!isMultilingual(config.settings)) return "en";
   try {
     const saved = localStorage.getItem(LANG_KEY);
     if (saved === "en" || saved === "hi") return saved;
@@ -56,7 +58,9 @@ function initialLang(config) {
 // A published website on the shop's address.
 export function LiveSite({ config }) {
   const brand = useBrand();
-  const [lang, setLang] = useState(() => initialLang(config));
+  const [chosen, setLang] = useState(() => initialLang(config));
+  // A one-language website always shows its main text.
+  const lang = isMultilingual(config.settings) ? chosen : "en";
   useEffect(() => {
     try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage off */ }
     document.documentElement.lang = lang;
@@ -135,6 +139,6 @@ function FrameView({ state, send }) {
   const brand = useBrand();
   return (
     <SiteView config={state.config} brand={brand} lang={state.lang} setLang={(l) => send({ type: "lang", lang: l })}
-      editing={state.editing !== false} selected={state.selected} send={send} />
+      editing={state.editing !== false} selected={state.selected} send={send} ui={state.ui} />
   );
 }

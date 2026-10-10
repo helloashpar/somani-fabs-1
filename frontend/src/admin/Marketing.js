@@ -125,21 +125,17 @@ function Connection({ config }) {
 }
 
 // Name, address, phone and the map / review links are the shop's details from
-// Shop setup > General (shown here read-only); WhatsApp only adds the slug.
+// Shop setup > General (shown here read-only). Message buttons link to
+// <site>/r/review and <site>/r/map, which open those links.
 const FROM_GENERAL = [
   ["name", "mk_shop_name"], ["short_name", "mk_short_name"], ["address", "mk_address"],
   ["phone", "mk_phone"], ["maps_url", "mk_maps"], ["review_url", "mk_review"],
 ];
 
-function Profile({ config, onSaved }) {
+function Profile({ config }) {
   const { t } = useLang();
-  const [slug, setSlug] = useState(config.shop_profile.slug || "");
   const p = config.shop_profile;
-  const save = async () => {
-    try { await api.put("/whatsapp/config", { shop_profile: { slug } }); toast.success("Saved"); onSaved(); }
-    catch (e) { toast.error(apiErr(e)); }
-  };
-  const base = config.public_base_url || "https://<PUBLIC_BASE_URL>";
+  const base = config.public_base_url || window.location.origin;
   return (
     <div className="space-y-4">
       <Card title={t("mk_from_general")} right={<a href="/admin?p=more&i=general" className="text-sm font-medium text-brand-700 hover:underline shrink-0">{t("mk_edit_general")}</a>}>
@@ -152,16 +148,9 @@ function Profile({ config, onSaved }) {
             </div>
           ))}
         </dl>
-      </Card>
-      <Card title={t("mk_slug")}>
-        <input data-testid="profile-slug" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="my-shop"
-          className="w-full border rounded-lg px-3 py-2 text-sm" />
-        {slug && (
-          <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2.5 break-all">
-            {t("mk_links_note")}<br />{base}/r/{slug}/review<br />{base}/r/{slug}/map
-          </div>
-        )}
-        <button data-testid="save-profile" onClick={save} className="w-full bg-brand-700 text-white py-2.5 rounded-lg font-medium">{t("save")}</button>
+        <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2.5 break-all" data-testid="profile-links">
+          {t("mk_links_note")}<br />{base}/r/review<br />{base}/r/map
+        </div>
       </Card>
     </div>
   );
@@ -338,7 +327,7 @@ function WhatsAppSettings({ config, reload }) {
       <UnderlineTabs testid="mk" value={section} onChange={setSection} tabs={SECTIONS.map((s) => ({ id: s.id, label: t(s.label) }))} />
       <div key={section} className="animate-in fade-in duration-150">
         {section === "connection" && <Connection config={config} />}
-        {section === "profile" && <Profile config={config} onSaved={reload} />}
+        {section === "profile" && <Profile config={config} />}
         {section === "automations" && <Automations config={config} onSaved={reload} />}
         {section === "templates" && <Templates config={config} />}
         {section === "log" && <Log />}

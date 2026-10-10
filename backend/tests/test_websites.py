@@ -119,3 +119,26 @@ async def test_site_images_upload_and_serve(env):
     img = await c.get(r.json()["url"])
     assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg"
     assert Image.open(io.BytesIO(img.content)).size == (1800, 900)
+
+
+async def test_custom_domain_saved_cleaned_and_checked(env, monkeypatch):
+    c, db, owner, staff = env
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://shop.example.net")
+    ips = {"shop.example.net": {"1.2.3.4"}, "myshop.in": {"1.2.3.4"}, "www.myshop.in": set()}
+
+    async def fake_ips(name):
+        return ips.get(name, set())
+    monkeypatch.setattr(websites, "_ips", fake_ips)
+
+    assert (await c.get("/api/websites/domain", headers=staff)).status_code == 403
+    r = (await c.get("/api/websites/domain", headers=owner)).json()
+    assert r == {"current": "shop.example.net", "custom": "", "server_ip": "1.2.3.4"}
+    for bad in ["not a domain", "shop", "shop.example.net"]:
+        assert (await c.put("/api/websites/domain", headers=owner, json={"domain": bad})).status_code == 400, bad
+    r = await c.put("/api/websites/domain", headers=owner, json={"domain": " https://WWW.MyShop.in/home "})
+    assert r.status_code == 200 and r.json()["custom"] == "myshop.in"
+    # The domain route is not taken for a variation id.
+    assert (await c.get("/api/websites", headers=owner)).status_code == 200
+    assert (await c.post("/api/websites/domain/check", headers=owner)).json() == {"domain": "myshop.in", "bare": True, "www": False, "found": True}
+    assert (await c.put("/api/websites/domain", headers=owner, json={"domain": ""})).json()["custom"] == ""
+    assert (await c.post("/api/websites/domain/check", headers=owner)).status_code == 400

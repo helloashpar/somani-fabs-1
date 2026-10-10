@@ -101,9 +101,10 @@ export function directionsUrl(b) {
   return b.maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.shop_name}, ${formatAddress(b)}`)}`;
 }
 
-// The map preview: the embed link saved in General, else a search map.
+// The map preview: the shop's name and address on Google Maps. (An embed
+// code saved by older versions of General is no longer asked for or used.)
 export function mapEmbedUrl(b) {
-  return b.map_embed_url || `https://www.google.com/maps?q=${encodeURIComponent(`${b.shop_name}, ${formatAddress(b)}`)}&output=embed`;
+  return `https://www.google.com/maps?q=${encodeURIComponent(`${b.shop_name}, ${formatAddress(b)}`)}&output=embed`;
 }
 
 // "10:00" -> "10 AM", "20:30" -> "8:30 PM" (Hindi: "सुबह 10", "रात 8:30").

@@ -39,7 +39,7 @@ const T = (key, label, extra = {}) => ({ key, label, kind: "text", lang: true, .
 const A = (key, label, extra = {}) => ({ key, label, kind: "area", lang: true, ...extra });
 const IMG = (key, label, extra = {}) => ({ key, label, kind: "image", ...extra });
 const CTA = (key, label) => ({ key, label, kind: "cta" });
-const TOGGLE = (key, label) => ({ key, label, kind: "toggle" });
+const TOGGLE = (key, label, extra = {}) => ({ key, label, kind: "toggle", ...extra });
 const ITEMS = (key, label, fields, extra = {}) => ({ key, label, kind: "items", fields, ...extra });
 
 const HEAD = [T("kicker", "Small line above"), T("title", "Heading"), A("subtitle", "Text under heading")];
@@ -65,10 +65,12 @@ export const SECTIONS = {
     name: "Hero", icon: Sparkles, group: "Story",
     desc: "The big first impression",
     variants: [{ id: "split", name: "Text + photo" }, { id: "fullbleed", name: "Full photo" }, { id: "centered", name: "Centred" }, { id: "collage", name: "Collage" }, { id: "arch", name: "Arch frame" }, { id: "poster", name: "Poster" }],
-    fields: [...HEAD, IMG("image", "Main photo"), IMG("image2", "Photo 2", { variants: ["collage"] }), IMG("image3", "Photo 3", { variants: ["collage"] }),
+    fields: [...HEAD, TOGGLE("show_image", "Show photo", { variants: ["split", "centered", "collage", "arch", "poster"], defaultOn: true }),
+      IMG("image", "Main photo", { when: (c) => c.show_image !== false }), IMG("image2", "Photo 2", { variants: ["collage"], when: (c) => c.show_image !== false }), IMG("image3", "Photo 3", { variants: ["collage"], when: (c) => c.show_image !== false }),
       CTA("cta", "Main button"), CTA("cta2", "Second button"), TOGGLE("show_hours", "Show open / closed badge"), TOGGLE("show_rating", "Show reviews badge")],
-    defaults: { kicker: "{city}", title: "Welcome to {shop_name}", subtitle: "Quality you can trust, prices you will love. Come visit us in {city}.", cta: "whatsapp", cta_label: "", cta2: "directions", cta2_label: "", show_hours: true, show_rating: false },
+    defaults: { kicker: "{city}", title: "Welcome to {shop_name}", subtitle: "Quality you can trust, prices you will love. Come visit us in {city}.", cta: "whatsapp", cta_label: "", cta2: "directions", cta2_label: "", show_hours: true, show_rating: false, show_image: true },
     tone: "page",
+    decor: ["split", "centered", "collage", "arch"],
   },
   about: {
     name: "About", icon: Info, group: "Story",
@@ -121,6 +123,7 @@ export const SECTIONS = {
     fields: [T("kicker", "Small line above"), T("title", "Offer"), A("text", "Details"), T("code", "Coupon code", { lang: false }), T("until", "Valid till"), IMG("image", "Photo", { variants: ["split"] }), CTA("cta", "Button")],
     defaults: { kicker: "Limited time", title: "Flat 20% off", text: "On the festive collection. Show this page at the shop.", code: "FESTIVE20", until: "", cta: "whatsapp", cta_label: "Claim on WhatsApp" },
     tone: "brand",
+    decor: ["banner"],
   },
   testimonials: {
     name: "Reviews", icon: Quote, group: "Trust",
@@ -194,10 +197,11 @@ export const SECTIONS = {
     fields: [T("title", "Heading"), A("text", "Text"), IMG("image", "Photo", { variants: ["split"] }), CTA("cta", "Main button"), CTA("cta2", "Second button")],
     defaults: { title: "Come see it for yourself", text: "Visit {shop_name} today, or message us and we will help you choose.", cta: "whatsapp", cta_label: "", cta2: "call", cta2_label: "" },
     tone: "brand",
+    decor: ["card"],
   },
   contact: {
     name: "Visit us", icon: Map, group: "Contact",
-    desc: "Address, hours, map and contact from General",
+    desc: "Address, hours, map and contact from your shop details",
     variants: [{ id: "split", name: "Map beside" }, { id: "cards", name: "Cards" }, { id: "bigmap", name: "Big map" }, { id: "compact", name: "Compact" }],
     fields: [T("kicker", "Small line above"), T("title", "Heading"), A("subtitle", "Text"), TOGGLE("show_map", "Show map"), TOGGLE("show_hours", "Show opening hours")],
     defaults: { kicker: "Visit us", title: "Come say hello", subtitle: "", show_map: true, show_hours: true },
@@ -235,10 +239,19 @@ export function newSection(type, variant, content) {
   };
 }
 
-// Fields shown for a section's current layout.
+// Fields shown for a section's current layout (and its other choices).
 export function fieldsFor(section) {
   const def = SECTIONS[section.type];
-  return def ? def.fields.filter((f) => !f.variants || f.variants.includes(section.variant)) : [];
+  return def ? def.fields.filter((f) => (!f.variants || f.variants.includes(section.variant)) && (!f.when || f.when(section.content))) : [];
+}
+
+// True when the section's current layout has soft decorative shapes, which
+// the owner may switch off.
+export function hasDecor(section) {
+  const def = SECTIONS[section.type];
+  if (!def || !def.decor) return false;
+  if (section.type === "hero" && section.content.show_image === false && section.variant !== "fullbleed") return true;
+  return def.decor.includes(section.variant);
 }
 
 // A copy of a section's content where a field's empty translations are dropped

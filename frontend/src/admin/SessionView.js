@@ -20,14 +20,79 @@ const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString("en-IN")}`;
 
 // While open, mirrors what this admin is viewing onto the shop display screen.
 // `target` is { trial_id } for one try-on or { session_id } for "show all".
+// Each open preview has its own id, so every device gets its own block.
+// Moving to another look only changes the picture in the same block. The
+// block goes the moment the preview or the tab closes; on phones also when
+// the screen locks or another app is opened (and comes back on return). On a
+// computer a hidden tab keeps its block: the shop screen is often another tab
+// or window of the same browser.
+const API_BASE = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
+const PHONE = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+let seqClock = 0;
+const nextSeq = () => { seqClock = Math.max(seqClock + 1, Date.now()); return seqClock; };
+
+// A 3-second tick from a worker: browsers slow down timers of hidden tabs
+// (to once a minute), but not a worker's, so a hidden tab's block stays.
+function everyThreeSeconds(fn) {
+  try {
+    const src = "setInterval(() => postMessage(0), 3000);";
+    const worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    worker.onmessage = fn;
+    return () => worker.terminate();
+  } catch {
+    const id = setInterval(fn, 3000);
+    return () => clearInterval(id);
+  }
+}
+
 function useLiveDisplay(target) {
+  const pid = useRef(null);
+  if (!pid.current) pid.current = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const latest = useRef(target);
+  latest.current = target;
+  const seq = useRef(0);
   const key = JSON.stringify(target);
+
+  // Show / change what this preview's block shows.
   useEffect(() => {
-    api.post("/display/preview", target).catch((e) => toast.error(apiErr(e)));
-    const beat = setInterval(() => api.post("/display/heartbeat").catch(() => {}), 5000);
-    return () => { clearInterval(beat); api.delete("/display/preview").catch(() => {}); };
+    seq.current = nextSeq();
+    api.post("/display/preview", { ...target, preview_id: pid.current, seq: seq.current }).catch((e) => toast.error(apiErr(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  // Keep the block alive; drop it when closed (and on phones when hidden).
+  useEffect(() => {
+    const id = pid.current;
+    let hidden = false;
+    const show = () => api.post("/display/preview", { ...latest.current, preview_id: id, seq: seq.current }).catch(() => {});
+    const drop = () => {
+      const token = localStorage.getItem("sf_token");
+      // A newer number than any request already on its way, so none of them
+      // can bring the block back. keepalive: still sent while the page closes.
+      seq.current = nextSeq();
+      fetch(`${API_BASE}/display/preview?preview_id=${encodeURIComponent(id)}&seq=${seq.current}`, {
+        method: "DELETE", keepalive: true, headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).catch(() => {});
+    };
+    const stop = everyThreeSeconds(() => { if (!hidden) show(); });
+    const onVis = () => {
+      if (!PHONE) return;
+      if (document.visibilityState === "hidden") { hidden = true; drop(); }
+      else { hidden = false; seq.current = nextSeq(); show(); }
+    };
+    // Back from the browser's back/forward cache: show it again.
+    const onShow = (e) => { if (e.persisted) { seq.current = nextSeq(); show(); } };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", drop);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", drop);
+      window.removeEventListener("pageshow", onShow);
+      drop();
+    };
+  }, []);
 }
 
 function useNoScroll() {

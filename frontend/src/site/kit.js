@@ -38,6 +38,27 @@ export const STR = {
 };
 export const useStr = () => STR[useSite().lang === "hi" ? "hi" : "en"];
 
+// Words of the builder itself (toolbar, empty photo, ...) in the admin app's
+// language. The builder sends them with the preview; English otherwise.
+const UI = {
+  addPhoto: "Add photo", changePhoto: "Change photo", addText: "Add text", fromShop: "From your shop details: tap to change",
+  up: "Move up", down: "Move down", layout: "Next layout", copy: "Copy", hide: "Hide", remove: "Delete", names: {},
+};
+export const useUi = () => ({ ...UI, ...(useSite().ui || {}) });
+
+// Props that make a shop detail (name, logo, address, hours, ...) tappable in
+// the builder: they come from Shop setup > General, so a tap opens it there.
+export function useFact(field) {
+  const { editing, send } = useSite();
+  const section = useContext(SectionCtx);
+  const ui = useUi();
+  if (!editing) return {};
+  return {
+    "data-general": field, title: ui.fromShop,
+    onClick: (e) => { e.preventDefault(); e.stopPropagation(); send({ type: "general", field, id: section ? section.id : null }); },
+  };
+}
+
 // A field in the visitor's language (falls back to the main text).
 export function tx(obj, key, lang) {
   if (!obj) return "";
@@ -58,6 +79,7 @@ export function fill(text, brand, lang) {
 // Text from the section's content: plain on the site, typed in place in the builder.
 export function T({ k, as: Tag = "span", className = "", item, list = "items", ph }) {
   const { lang, editing, brand, send } = useSite();
+  const ui = useUi();
   const section = useSection();
   const ref = useRef(null);
   const src = item !== undefined ? ((section.content[list] || [])[item] || {}) : section.content;
@@ -78,7 +100,7 @@ export function T({ k, as: Tag = "span", className = "", item, list = "items", p
       spellCheck={false} className={className} onFocus={onFocus} onBlur={onBlur}
       onKeyDown={(e) => { if (e.key === "Enter" && Tag !== "p" && Tag !== "div") { e.preventDefault(); e.currentTarget.blur(); } if (e.key === "Escape") e.currentTarget.blur(); }}
       onClick={(e) => e.stopPropagation()}>
-      {shown || ph || STR.en.addText}
+      {shown || ph || ui.addText}
     </Tag>
   );
 }
@@ -98,6 +120,7 @@ export function useHas() {
 // a new website looks finished before any photo is added.
 export function Img({ k = "image", item, list = "items", className = "", alt = "", style, rounded = true, seed = 0, eager }) {
   const { editing, send } = useSite();
+  const ui = useUi();
   const section = useSection();
   const src = item !== undefined ? (((section.content[list] || [])[item] || {})[k]) : section.content[k];
   const pick = () => send({ type: "image", id: section.id, key: k, item, list });
@@ -107,7 +130,7 @@ export function Img({ k = "image", item, list = "items", className = "", alt = "
     return (
       <span className={`relative block overflow-hidden ${cls} ${editing ? "cursor-pointer group/img" : ""}`} style={style} onClick={onClick}>
         <img src={mediaSrc(src)} alt={alt} loading={eager ? "eager" : "lazy"} className="absolute inset-0 h-full w-full object-cover" />
-        {editing && <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover/img:bg-black/30 group-hover/img:opacity-100"><span className="rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow">Change photo</span></span>}
+        {editing && <span className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover/img:bg-black/30 group-hover/img:opacity-100"><span className="rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow">{ui.changePhoto}</span></span>}
       </span>
     );
   }
@@ -117,7 +140,7 @@ export function Img({ k = "image", item, list = "items", className = "", alt = "
       className={`relative block overflow-hidden ${cls} ${editing ? "cursor-pointer" : ""}`} aria-hidden={!alt}>
       <span className="absolute inset-0 opacity-30" style={{ backgroundImage: "radial-gradient(rgba(255,255,255,.55) 1.2px, transparent 1.4px)", backgroundSize: "16px 16px" }} />
       <span className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/20 blur-xl" />
-      {editing && <span className="absolute inset-0 grid place-items-center"><span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow"><ImagePlus size={14} /> Add photo</span></span>}
+      {editing && <span className="absolute inset-0 grid place-items-center"><span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-gray-900 shadow"><ImagePlus size={14} /> {ui.addPhoto}</span></span>}
     </span>
   );
 }
@@ -242,9 +265,10 @@ export function Section({ section, children, pad = true, className = "", style }
   const tone = (section.style && section.style.tone) || def.tone;
   const textured = tone !== "page" && theme.texture && theme.texture !== "none";
   const isSel = editing && selected === section.id;
+  const plain = section.style && section.style.decor === false;
   return (
     <SectionCtx.Provider value={section}>
-      <section id={section.id} data-section={section.id}
+      <section id={section.id} data-section={section.id} data-plain={plain ? "1" : undefined}
         style={{ ...toneVars(tone), ...style }}
         onClick={editing ? (e) => { e.stopPropagation(); send({ type: "select", id: section.id }); } : undefined}
         className={`relative scroll-mt-20 bg-[var(--t-bg)] text-[var(--t-ink)] ${editing ? "cursor-pointer" : ""} ${className}`}>
@@ -261,6 +285,7 @@ export function Section({ section, children, pad = true, className = "", style }
 
 function Toolbar({ section, send }) {
   const def = SECTIONS[section.type];
+  const ui = useUi();
   const b = (icon, label, action) => {
     const I = icon;
     return (
@@ -270,13 +295,13 @@ function Toolbar({ section, send }) {
   };
   return (
     <div className="absolute left-1/2 top-2 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl bg-[#16a34a] p-1 font-[Geist,system-ui,sans-serif] shadow-xl" onClick={(e) => e.stopPropagation()}>
-      <span className="px-2 text-xs font-semibold text-white">{def.name}</span>
-      {b(ArrowUp, "Move up", "up")}
-      {b(ArrowDown, "Move down", "down")}
-      {def.variants.length > 1 && b(Shuffle, "Next layout", "variant")}
-      {b(Copy, "Duplicate", "duplicate")}
-      {b(EyeOff, "Hide", "hide")}
-      {b(Trash2, "Delete", "delete")}
+      <span className="px-2 text-xs font-semibold text-white">{ui.names[section.type] || def.name}</span>
+      {b(ArrowUp, ui.up, "up")}
+      {b(ArrowDown, ui.down, "down")}
+      {def.variants.length > 1 && b(Shuffle, ui.layout, "variant")}
+      {b(Copy, ui.copy, "duplicate")}
+      {b(EyeOff, ui.hide, "hide")}
+      {b(Trash2, ui.remove, "delete")}
     </div>
   );
 }

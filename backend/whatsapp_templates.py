@@ -307,11 +307,11 @@ def submission(name: str, lang: str, base_url: str, header_handle: Optional[str]
         if b["type"] == "QUICK_REPLY":
             buttons.append({"type": "QUICK_REPLY", "text": b["text"][lang]})
         else:
-            # One fixed base URL for every shop; the shop slug + link kind is
-            # the dynamic suffix, e.g. https://app.example.com/r/myshop/review
+            # One fixed base URL; the link kind is the dynamic suffix, e.g.
+            # https://app.example.com/r/review
             base = base_url.rstrip("/") + "/r/"
             buttons.append({"type": "URL", "text": b["text"][lang], "url": base + "{{1}}",
-                            "example": [base + "shop/" + b["link"]]})
+                            "example": [base + b["link"]]})
     if buttons:
         comps.append({"type": "BUTTONS", "buttons": buttons})
     return {"name": meta_name(name, lang), "language": meta_language(lang),
@@ -324,7 +324,7 @@ def _param_text(value) -> str:
     return text[:1000] or "-"
 
 
-def send_components(name: str, lang: str, values: Dict[str, object], slug: str = "",
+def send_components(name: str, lang: str, values: Dict[str, object],
                     media_id: Optional[str] = None, payload: str = "") -> List[Dict]:
     """`components` for sending the template with these values."""
     t = _spec(name)
@@ -341,5 +341,5 @@ def send_components(name: str, lang: str, values: Dict[str, object], slug: str =
                           "parameters": [{"type": "payload", "payload": payload or name.upper()}]})
         else:
             comps.append({"type": "button", "sub_type": "url", "index": str(i),
-                          "parameters": [{"type": "text", "text": f"{slug}/{b['link']}"}]})
+                          "parameters": [{"type": "text", "text": b["link"]}]})
     return comps

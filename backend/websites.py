@@ -22,6 +22,7 @@ import asyncio
 import base64
 import io
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -161,9 +162,9 @@ def clean_config(cfg: Any) -> Dict[str, Any]:
 def _name(v: Any) -> str:
     name = " ".join(str(v or "").split())
     if not name:
-        _bad("Give the website a name")
+        _bad("Give the variation a name")
     if len(name) > 40:
-        _bad("Website name: at most 40 characters")
+        _bad("Variation name: at most 40 characters")
     return name
 
 
@@ -193,13 +194,13 @@ async def live_id() -> str:
 async def _get(site_id: str) -> Dict[str, Any]:
     doc = await _db().websites.find_one({"id": site_id}, {"_id": 0})
     if not doc:
-        raise HTTPException(404, "Website not found")
+        raise HTTPException(404, "Variation not found")
     return doc
 
 
 def _editable(doc: Dict[str, Any]):
     if doc.get("locked") or doc.get("kind") != "builder":
-        raise HTTPException(403, "This website is locked and cannot be changed")
+        raise HTTPException(403, "This variation is locked and cannot be changed")
 
 
 async def ensure_seed(db):
@@ -227,7 +228,7 @@ async def create_site(body: Dict[str, Any], user=Depends(current_user)):
     _require(user)
     db = _db()
     if await db.websites.count_documents({}) >= MAX_SITES:
-        _bad(f"You can keep up to {MAX_SITES} websites. Delete one to make a new one.")
+        _bad(f"You can keep up to {MAX_SITES} variations. Delete one to make a new one.")
     doc = {"id": uuid.uuid4().hex[:12], "name": _name(body.get("name")), "kind": "builder", "locked": False,
            "config": clean_config(body.get("config")), "history": [],
            "origin": _text(body.get("origin"), 40, "Origin"),
@@ -235,6 +236,77 @@ async def create_site(body: Dict[str, Any], user=Depends(current_user)):
     await db.websites.insert_one(dict(doc))
     await _log(user, "website_create", doc["name"])
     return _summary(doc)
+
+
+# ---------- Web address ----------
+# The website is hosted here, at the shop's current address (PUBLIC_BASE_URL,
+# else the address the admin app is opened on). A shop may also point its own
+# domain at it: it buys the domain elsewhere and adds two DNS records there
+# (A for the bare domain to this server's IP, CNAME for www to the current
+# address). The server answers any name (nginx `server_name _`), so once DNS
+# points here the site shows. Only the chosen domain is stored.
+_DOMAIN = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def _host(request: Request) -> str:
+    base = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if base:
+        return re.sub(r"^https?://", "", base).split("/")[0].split(":")[0].lower()
+    return (request.headers.get("x-forwarded-host") or request.headers.get("origin") or request.url.hostname or "").replace("https://", "").replace("http://", "").split(":")[0].lower()
+
+
+def _clean_domain(v: Any) -> str:
+    d = str(v or "").strip().lower()
+    d = re.sub(r"^https?://", "", d).split("/")[0].split(":")[0].strip(".")
+    if d.startswith("www."):
+        d = d[4:]
+    if d and not _DOMAIN.match(d):
+        _bad("That doesn't look like a web address. Write it like myshop.com")
+    return d
+
+
+async def _ips(name: str) -> set:
+    if not name:
+        return set()
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await asyncio.wait_for(loop.getaddrinfo(name, None), 5)
+    except Exception:  # noqa: BLE001 - not found / timeout: no addresses
+        return set()
+    return {i[4][0] for i in infos}
+
+
+@router.get("/domain")
+async def get_domain(request: Request, user=Depends(current_user)):
+    _require(user)
+    s = await _db().settings.find_one({"id": "global"}, {"_id": 0, "custom_domain": 1}) or {}
+    host = _host(request)
+    ips = sorted(await _ips(host))
+    return {"current": host, "custom": s.get("custom_domain", ""), "server_ip": ips[0] if ips else ""}
+
+
+@router.put("/domain")
+async def set_domain(body: Dict[str, Any], request: Request, user=Depends(current_user)):
+    _require(user)
+    d = _clean_domain(body.get("domain"))
+    if d and d == _host(request):
+        _bad("That is already your website's address")
+    await _db().settings.update_one({"id": "global"}, {"$set": {"custom_domain": d}}, upsert=True)
+    await _log(user, "website_domain", d or "removed")
+    return await get_domain(request, user)
+
+
+@router.post("/domain/check")
+async def check_domain(request: Request, user=Depends(current_user)):
+    """Whether the shop's own domain (and www.) already point at this server."""
+    _require(user)
+    s = await _db().settings.find_one({"id": "global"}, {"_id": 0, "custom_domain": 1}) or {}
+    d = s.get("custom_domain", "")
+    if not d:
+        _bad("Add your web address first")
+    ours = await _ips(_host(request))
+    bare, www = await _ips(d), await _ips(f"www.{d}")
+    return {"domain": d, "bare": bool(bare & ours), "www": bool(www & ours), "found": bool(bare or www)}
 
 
 @router.get("/{site_id}")
@@ -306,9 +378,9 @@ async def delete_site(site_id: str, user=Depends(current_user)):
     _require(user)
     doc = await _get(site_id)
     if doc.get("locked"):
-        raise HTTPException(403, "This website is locked and cannot be deleted")
+        raise HTTPException(403, "This variation is locked and cannot be deleted")
     if await live_id() == site_id:
-        _bad("This website is live. Make another one live first.")
+        _bad("This variation is live. Make another one live first.")
     await _db().websites.delete_one({"id": site_id})
     await _log(user, "website_delete", doc["name"])
     return {"ok": True}

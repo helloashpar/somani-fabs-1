@@ -15,7 +15,6 @@ from datetime import datetime, timezone, timedelta, date as date_cls
 
 import jwt
 import bcrypt
-import pandas as pd
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse, Response
 from starlette.middleware.cors import CORSMiddleware
@@ -31,6 +30,7 @@ import messaging
 import permissions
 import watermark
 import websites
+import display_media
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(
@@ -217,6 +217,7 @@ async def log_action(user, action, details=""):
 
 
 websites.init(lambda: db, get_current_user, log_action)
+display_media.init(lambda: db, get_current_user, log_action)
 
 
 # ---------- Models ----------
@@ -803,6 +804,7 @@ async def export_customers(user=Depends(get_current_user)):
         for k in labels + [k for k in extra if k not in labels]:
             row[k] = extra.get(k, "")
         rows.append(row)
+    import pandas as pd  # loaded here so the server still starts when pandas cannot load
     df = pd.DataFrame(rows)
     shop = (await current_brand())["shop_name"]
     buf = io.BytesIO()
@@ -1560,12 +1562,25 @@ async def update_settings(body: Dict[str, Any], user=Depends(get_current_user)):
 
 
 # ---------- Live Display ----------
-# Each admin shows one thing on the shop screen at a time: a single try-on
-# (`trial_id`) or every finished try-on of a session ("show all", `session_id`).
-# The screen splits equally between admins, ordered by `started_at` (first in,
-# first out); heartbeats only touch `updated_at`, so tiles never swap places.
+# Every open preview (each screen of each admin, on any device) gets its own
+# block on the shop screen: one try-on (`trial_id`) or every finished try-on
+# of a session ("show all", `session_id`). A preview is `pid` = admin id +
+# the device's own preview id, so two phones of one admin never clash.
+# Blocks are ordered by `started_at` (first in, first out). Moving to another
+# look only changes what the block shows, never its place; `seq` (from the
+# device) makes a late, older request unable to undo a newer one.
+# Previews not seen for PREVIEW_STALE seconds drop off (closed tab, locked
+# phone); the app also removes its preview the moment it closes or hides.
+PREVIEW_STALE = 9
+
+
+def _pid(user: Dict[str, Any], preview_id: Any) -> str:
+    raw = re.sub(r"[^A-Za-z0-9_-]", "", str(preview_id or ""))[:40]
+    return f"{user['id']}:{raw}" if raw else user["id"]
+
+
 @api.post("/display/preview")
-async def set_preview(body: Dict[str, str], user=Depends(get_current_user)):
+async def set_preview(body: Dict[str, Any], user=Depends(get_current_user)):
     if body.get("trial_id"):
         trial = await db.trials.find_one({"id": body["trial_id"]}, {"_id": 0, "id": 1,
                                                                     "session_id": 1, "description": 1})
@@ -1581,26 +1596,51 @@ async def set_preview(body: Dict[str, str], user=Depends(get_current_user)):
     session = await db.sessions.find_one({"id": sid}, {"_id": 0, "customer_name": 1, "start_time": 1})
     if not session:
         raise HTTPException(404, "Session not found")
+    pid = _pid(user, body.get("preview_id"))
+    try:
+        seq = int(body.get("seq") or 0)
+    except (TypeError, ValueError):
+        seq = 0
+    cur = await db.live_previews.find_one({"pid": pid}, {"_id": 0, "seq": 1})
+    if cur and (cur.get("seq") or 0) > seq:
+        return {"ok": True, "stale": True}
     await db.live_previews.update_one(
-        {"admin_id": user["id"]},
+        {"pid": pid},
         {"$set": {
-            "admin_id": user["id"], "admin_username": user["name"], "session_id": sid,
-            "customer_name": session.get("customer_name", ""),
+            "pid": pid, "admin_id": user["id"], "admin_username": user["name"], "session_id": sid,
+            "customer_name": session.get("customer_name", ""), "seq": seq, "closed": False,
             "start_time": session.get("start_time", ""), "updated_at": iso(), **fields},
          "$setOnInsert": {"started_at": iso()}},
         upsert=True)
+    # A block remembered as closed may have no start yet: give it one now,
+    # once, so its place on the screen never moves.
+    await db.live_previews.update_one({"pid": pid, "started_at": {"$exists": False}}, {"$set": {"started_at": iso()}})
     return {"ok": True}
 
 
 @api.post("/display/heartbeat")
-async def heartbeat(user=Depends(get_current_user)):
-    await db.live_previews.update_one({"admin_id": user["id"]}, {"$set": {"updated_at": iso()}})
+async def heartbeat(body: Optional[Dict[str, Any]] = None, user=Depends(get_current_user)):
+    pid = _pid(user, (body or {}).get("preview_id"))
+    await db.live_previews.update_one({"pid": pid}, {"$set": {"updated_at": iso()}})
     return {"ok": True}
 
 
 @api.delete("/display/preview")
-async def clear_preview(user=Depends(get_current_user)):
-    await db.live_previews.delete_one({"admin_id": user["id"]})
+async def clear_preview(preview_id: Optional[str] = None, seq: Optional[int] = None, user=Depends(get_current_user)):
+    pid = _pid(user, preview_id)
+    if seq is None:
+        await db.live_previews.delete_one({"pid": pid})
+    else:
+        # Closed, but remembered briefly with its `seq`, so a request sent
+        # just before closing can't bring the block back. A close older than
+        # what the block shows now (it arrived late) is ignored.
+        cur = await db.live_previews.find_one({"pid": pid}, {"_id": 0, "seq": 1})
+        if cur and (cur.get("seq") or 0) > seq:
+            return {"ok": True, "stale": True}
+        await db.live_previews.update_one({"pid": pid}, {"$set": {"pid": pid, "admin_id": user["id"], "closed": True,
+                                                                  "seq": seq, "updated_at": iso()}}, upsert=True)
+    old = (now_utc() - timedelta(minutes=2)).isoformat()
+    await db.live_previews.delete_many({"closed": True, "updated_at": {"$lt": old}})
     return {"ok": True}
 
 
@@ -1610,12 +1650,22 @@ async def display_state(secret: str, v: Optional[str] = None):
         {"id": "global"}, {"_id": 0, "display_secret": 1, "idle_image": 1})
     if not s or s.get("display_secret") != secret:
         raise HTTPException(404, "Not found")
-    cutoff = (now_utc() - timedelta(seconds=12)).isoformat()
+    cutoff = (now_utc() - timedelta(seconds=PREVIEW_STALE)).isoformat()
     previews = await db.live_previews.find(
-        {"updated_at": {"$gte": cutoff}}, {"_id": 0}
-    ).to_list(8)
-    # First in, first out: a tile keeps its place until that admin closes it.
-    previews.sort(key=lambda p: (p.get("started_at") or p.get("updated_at") or "", p["admin_id"]))
+        {"updated_at": {"$gte": cutoff}, "closed": {"$ne": True}}, {"_id": 0}
+    ).to_list(12)
+    for p in previews:
+        p["pid"] = p.get("pid") or p["admin_id"]
+    # First in, first out: a block keeps its place until its preview closes.
+    previews.sort(key=lambda p: (p.get("started_at") or "", p["pid"]))
+    # The same thing shown from two places is one block (the first one).
+    seen, unique = set(), []
+    for p in previews:
+        what = (p.get("mode"), p.get("trial_id") if p.get("mode") == "trial" else p.get("session_id"))
+        if what not in seen:
+            seen.add(what)
+            unique.append(p)
+    previews = unique[:8]
 
     # Which finished try-ons each preview shows (ids only; images come later).
     show_all = [p["session_id"] for p in previews if p.get("mode") == "session"]
@@ -1630,11 +1680,13 @@ async def display_state(secret: str, v: Optional[str] = None):
                           else [p["trial_id"]] if p.get("trial_id") else [])
 
     # version changes only when the visible content changes (tiles, their
-    # try-ons, idle image or watermark), so clients skip re-downloading images.
+    # try-ons, idle screen or watermark), so clients skip re-downloading images.
     idle_img = s.get("idle_image") or ""
+    slides = await display_media.slides()
     wm_sig = (await current_watermark())[1]
-    raw_v = "|".join(f"{p['admin_id']}:{','.join(p['trial_ids'])}" for p in previews)
+    raw_v = "|".join(f"{p['pid']}:{','.join(p['trial_ids'])}" for p in previews)
     raw_v += "#" + hashlib.md5(idle_img.encode()).hexdigest() + "#" + wm_sig
+    raw_v += "#" + ",".join(f"{x['id']}:{x['seconds']}" for x in slides)
     version = hashlib.md5(raw_v.encode()).hexdigest()
     if v and v == version:
         return {"unchanged": True, "version": version}
@@ -1653,11 +1705,11 @@ async def display_state(secret: str, v: Optional[str] = None):
                    "description": trials[tid].get("description", "")}
                   for tid in p["trial_ids"] if tid in trials]
         if images:
-            out.append({"admin_id": p["admin_id"], "mode": p.get("mode", "trial"),
+            out.append({"pid": p["pid"], "admin_id": p["admin_id"], "mode": p.get("mode", "trial"),
                         "customer_name": p.get("customer_name", ""),
                         "description": p.get("description", ""),
                         "start_time": p.get("start_time", ""), "images": images})
-    return {"previews": out, "idle_image": idle_img, "version": version}
+    return {"previews": out, "idle_image": idle_img, "slides": slides, "version": version}
 
 
 # ---------- Stats ----------
@@ -1708,6 +1760,7 @@ app.include_router(messaging.router)
 app.include_router(messaging.public_router)
 app.include_router(websites.router)
 app.include_router(websites.public_router)
+app.include_router(display_media.router)
 app.add_middleware(
     CORSMiddleware, allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
@@ -1904,6 +1957,7 @@ async def _seed_database():
     await _upgrade_item_descriptions()
     await permissions.migrate(db)
     await websites.ensure_seed(db)
+    await display_media.migrate(db)
     await _migrate_category_kinds()
     # settings + display secret
     s = await db.settings.find_one({"id": "global"})
@@ -1925,6 +1979,7 @@ async def _seed_database():
         await db.trials.create_index("expire_at", expireAfterSeconds=0)
         await db.trials.create_index([("session_id", 1), ("input_hash", 1)])
         await db.live_previews.create_index("updated_at")
+        await db.live_previews.create_index("pid")
         await db.customers.create_index("mobile")
         await db.catalog.create_index("id", unique=True)
         await db.catalog.create_index("name_key", unique=True)

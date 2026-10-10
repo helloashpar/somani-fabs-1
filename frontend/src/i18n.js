@@ -716,7 +716,7 @@ Object.assign(STR.english, {
   gen_identity_sub: "Used everywhere: websites, WhatsApp, app, shop screen, browser tab",
   gen_source_note: "These are your shop's basic details, kept in one place. Your websites, WhatsApp messages, the app and the shop screen all use them, so change them only here. For text in another language, tap “Add language” next to a field.",
   gen_social_sub: "Icons on your websites. Empty ones are hidden",
-  set_website: "Website", tile_website_sub: "Design up to 3 websites and pick the live one",
+  set_website: "Website", tile_website_sub: "Up to 3 variations of your website. Pick which one customers see",
   mk_from_general: "From Shop setup › General", mk_edit_general: "Edit in General",
   mk_from_general_sub: "Messages use your shop's name, address, phone and links from General, so they always match your website.",
 });
@@ -733,7 +733,7 @@ Object.assign(STR.hinglish, {
   gen_saved: "Save ho gaya. Har jagah badal gaya.", gen_unsaved: "Badlav abhi save nahi hue",
   gen_everywhere: "Badlav website aur app par turant dikhenge", gen_name_required: "Dukaan ka naam zaroori hai",
   tile_general_sub: "Logo, naam, pata, samay, map, contact aur social links",
-  set_website: "Website", tile_website_sub: "3 tak websites banayein aur live wali chunein",
+  set_website: "Website", tile_website_sub: "Website ke 3 tak variations. Chunein customers kaun sa dekhein",
   mk_from_general: "Dukaan setup › General se", mk_edit_general: "General mein badlein",
   mk_from_general_sub: "Messages mein dukaan ka naam, pata, phone aur links General se aate hain.",
 });
@@ -750,7 +750,7 @@ Object.assign(STR.hindi, {
   gen_saved: "सेव हो गया। हर जगह बदल गया।", gen_unsaved: "बदलाव अभी सेव नहीं हुए",
   gen_everywhere: "बदलाव वेबसाइट और ऐप पर तुरंत दिखेंगे", gen_name_required: "दुकान का नाम ज़रूरी है",
   tile_general_sub: "लोगो, नाम, पता, समय, नक्शा, संपर्क और सोशल लिंक",
-  set_website: "वेबसाइट", tile_website_sub: "3 तक वेबसाइट बनाएं और लाइव वाली चुनें",
+  set_website: "वेबसाइट", tile_website_sub: "वेबसाइट के 3 तक वेरिएशन। चुनें ग्राहक कौन सा देखें",
   mk_from_general: "दुकान सेटअप › सामान्य से", mk_edit_general: "सामान्य में बदलें",
   mk_from_general_sub: "मैसेज में दुकान का नाम, पता, फ़ोन और लिंक सामान्य से आते हैं।",
 });

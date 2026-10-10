@@ -156,6 +156,12 @@ const ALT = {
   gallery: { grid: "mosaic", masonry: "grid", mosaic: "masonry" },
 };
 
+// The top section's layout a vibe uses (the quiz suggests it first).
+export function heroFor(vibe) {
+  const row = (LAYOUTS[vibe] || LAYOUTS.modern).find(([type]) => type === "hero");
+  return row ? row[1] : "split";
+}
+
 // Fill a section's content from the pack.
 function contentFor(type, pack, goal) {
   const def = { ...newSection(type).content };
@@ -177,13 +183,15 @@ function contentFor(type, pack, goal) {
 }
 
 // A complete website config from the quiz answers / pack choice.
-export function buildSite({ pack: packId = "fashion", vibe = "modern", look, theme = {}, goal = "whatsapp", alt = false }) {
+// `hero`: the top section's layout, if the owner picked one; `multilingual`:
+// English + हिंदी with a switch, else one language only (the default).
+export function buildSite({ pack: packId = "fashion", vibe = "modern", look, theme = {}, goal = "whatsapp", alt = false, hero, multilingual = false }) {
   const pack = PACKS.find((p) => p.id === packId) || PACKS[0];
   const lookTheme = (LOOKS.find((l) => l.id === (look || pack.look)) || LOOKS[2]).theme;
   const rows = LAYOUTS[vibe] || LAYOUTS.modern;
   const sections = rows.map(([type, variant, tone, extra]) => {
     const v = alt && ALT[type] && ALT[type][variant] ? ALT[type][variant] : variant;
-    let use = v;
+    let use = type === "hero" && hero ? hero : v;
     // Price lists read best as a list, whatever the vibe.
     if (type === "products" && pack.products.variant === "menu") use = "menu";
     const s = newSection(type, use, { ...contentFor(type, pack, goal), ...(extra || {}) });
@@ -192,7 +200,7 @@ export function buildSite({ pack: packId = "fashion", vibe = "modern", look, the
   });
   return {
     theme: { ...lookTheme, ...theme },
-    settings: { whatsapp_button: goal === "whatsapp", call_bar: goal === "call" || goal === "visit", language_switch: true, default_lang: "en", seo_title: "", seo_description: "" },
+    settings: { whatsapp_button: goal === "whatsapp", call_bar: goal === "call" || goal === "visit", multilingual, language_switch: multilingual, lang_style: "button", default_lang: "en", seo_title: "", seo_description: "" },
     sections,
   };
 }
@@ -201,7 +209,13 @@ export function buildSite({ pack: packId = "fashion", vibe = "modern", look, the
 export function blankSite() {
   return {
     theme: { ...LOOKS[2].theme },
-    settings: { whatsapp_button: true, call_bar: true, language_switch: true, default_lang: "en" },
+    settings: { whatsapp_button: true, call_bar: true, multilingual: false, language_switch: false, lang_style: "button", default_lang: "en" },
     sections: [newSection("header"), newSection("hero"), newSection("contact"), newSection("footer")],
   };
+}
+
+// Whether a website is in two languages. Older ones (before the setting)
+// were, unless their language switch was turned off.
+export function isMultilingual(settings = {}) {
+  return settings.multilingual === undefined ? settings.language_switch !== false : !!settings.multilingual;
 }

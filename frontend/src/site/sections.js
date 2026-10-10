@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Menu, X, Languages, Star, MapPin, Clock, Phone, Mail, MessageCircle, Instagram, Facebook, Youtube, Twitter, Linkedin, Globe, Check, ChevronDown, Quote as QuoteIcon, Sparkles } from "lucide-react";
 import { pick, telHref, waHref, prettyMobile, formatAddress, mapEmbedUrl, hoursRows, hoursSummary, openNow, hasHours, formatTime, DAYS, DAY_NAMES } from "@/lib/brand";
 import { ICONS } from "@/site/registry";
-import { useSite, useStr, useSection, useHas, useItems, T, Img, Action, QuickAction, Reveal, Container, Heading, Section, fill, tx, btnClass } from "@/site/kit";
+import { isMultilingual } from "@/site/presets";
+import { useSite, useStr, useSection, useHas, useItems, useFact, T, Img, Action, QuickAction, Reveal, Container, Heading, Section, fill, tx, btnClass } from "@/site/kit";
 
 // Every section type in every layout. Each reads its own content (T, Img,
 // Action) and the shop's facts from General (brand). Colours, fonts, corners
@@ -15,22 +16,25 @@ const NAV = {
 
 function ShopName({ className = "" }) {
   const { brand, lang } = useSite();
-  return <span className={`s-head ${className}`}>{pick(brand, "shop_name", lang)}</span>;
+  const fact = useFact("shop_name");
+  return <span {...fact} className={`s-head ${className}`}>{pick(brand, "shop_name", lang)}</span>;
 }
 
 function Logo({ className = "h-10 w-10" }) {
   const { brand } = useSite();
+  const fact = useFact("logo");
   if (!brand.logo_src) return null;
-  return <img src={brand.logo_src} alt="" className={`${className} shrink-0 rounded-[calc(var(--s-radius)*0.6)] object-contain`} />;
+  return <img {...fact} src={brand.logo_src} alt="" className={`${className} shrink-0 rounded-[calc(var(--s-radius)*0.6)] object-contain`} />;
 }
 
 function OpenBadge({ className = "" }) {
   const { brand } = useSite();
   const str = useStr();
   const open = openNow(brand);
+  const fact = useFact("hours");
   if (open === null) return null;
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full bg-[var(--t-card)] px-3.5 py-1.5 text-[13.5px] font-semibold ring-1 ring-[var(--t-line)] ${className}`}>
+    <span {...fact} className={`inline-flex items-center gap-2 rounded-full bg-[var(--t-card)] px-3.5 py-1.5 text-[13.5px] font-semibold ring-1 ring-[var(--t-line)] ${className}`}>
       <span className={`h-2 w-2 rounded-full ${open ? "bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,.2)]" : "bg-rose-500"}`} />
       {open ? str.open : str.closed}
     </span>
@@ -40,9 +44,10 @@ function OpenBadge({ className = "" }) {
 function RatingBadge({ className = "" }) {
   const { brand, editing } = useSite();
   const str = useStr();
+  const fact = useFact("reviews");
   if (!brand.reviews_url) return null;
   return (
-    <a href={brand.reviews_url} target="_blank" rel="noreferrer" onClick={editing ? (e) => e.preventDefault() : undefined}
+    <a href={brand.reviews_url} target="_blank" rel="noreferrer" onClick={editing ? (e) => e.preventDefault() : undefined} {...fact}
       className={`inline-flex items-center gap-1.5 rounded-full bg-[var(--t-card)] px-3.5 py-1.5 text-[13.5px] font-semibold ring-1 ring-[var(--t-line)] ${className}`}>
       <span className="flex text-amber-500">{[0, 1, 2, 3, 4].map((i) => <Star key={i} size={13} fill="currentColor" strokeWidth={0} />)}</span> {str.reviews}
     </a>
@@ -88,6 +93,44 @@ function Announce({ s }) {
   );
 }
 
+// The English / हिंदी switch in the header, in the style chosen in the
+// website's settings.
+export function LangSwitch({ kind = "button", lang, setLang, label }) {
+  const other = lang === "hi" ? "en" : "hi";
+  const flip = () => setLang(other);
+  if (kind === "toggle") {
+    return (
+      <span role="group" aria-label={label} className="inline-flex h-10 items-center rounded-full p-1 text-[13.5px] font-semibold ring-1 ring-[var(--t-line)]">
+        {[["en", "EN"], ["hi", "हिं"]].map(([l, t]) => (
+          <button key={l} type="button" aria-pressed={lang === l} onClick={() => setLang(l)} lang={l}
+            className={`h-8 rounded-full px-3 transition-colors ${lang === l ? "bg-[var(--t-btn)] text-[var(--t-on-btn)]" : "text-[var(--t-muted)]"}`}>{t}</button>
+        ))}
+      </span>
+    );
+  }
+  if (kind === "text") {
+    return (
+      <button type="button" onClick={flip} aria-label={label} lang={other}
+        className="inline-flex h-10 items-center px-1 text-[14.5px] font-semibold underline decoration-2 underline-offset-4 decoration-[var(--t-hi)]">{other === "hi" ? "हिंदी" : "English"}</button>
+    );
+  }
+  if (kind === "icon") {
+    return (
+      <button type="button" onClick={flip} aria-label={label} title={other === "hi" ? "हिंदी" : "English"}
+        className="relative grid h-10 w-10 place-items-center rounded-full ring-1 ring-[var(--t-line)] hover:bg-[var(--t-card)]">
+        <Languages size={17} aria-hidden="true" />
+        <span className="absolute -bottom-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--t-btn)] px-1 text-[10px] font-bold text-[var(--t-on-btn)]" lang={other}>{other === "hi" ? "हि" : "EN"}</span>
+      </button>
+    );
+  }
+  return (
+    <button type="button" onClick={flip} aria-label={label}
+      className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-[14px] font-semibold ring-1 ring-[var(--t-line)] hover:bg-[var(--t-card)]">
+      <Languages size={16} aria-hidden="true" /> <span lang={other}>{other === "hi" ? "हिंदी" : "English"}</span>
+    </button>
+  );
+}
+
 function Header({ s }) {
   const { lang, setLang, config, editing } = useSite();
   const str = useStr();
@@ -98,14 +141,10 @@ function Header({ s }) {
     .filter((x, i, all) => all.findIndex((y) => y.type === x.type) === i)
     .slice(0, 5)
     .map((x) => ({ href: `#${x.id}`, label: NAV[lang === "hi" ? "hi" : "en"][x.type] }));
-  const showLang = config.settings && config.settings.language_switch !== false;
+  const st = config.settings || {};
+  const showLang = isMultilingual(st) && st.language_switch !== false;
   const transparent = c.transparent;
-  const LangBtn = showLang ? (
-    <button type="button" onClick={() => setLang(lang === "hi" ? "en" : "hi")} aria-label={str.language}
-      className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-[14px] font-semibold ring-1 ring-[var(--t-line)] hover:bg-[var(--t-card)]">
-      <Languages size={16} aria-hidden="true" /> <span lang={lang === "hi" ? "en" : "hi"}>{lang === "hi" ? "English" : "हिंदी"}</span>
-    </button>
-  ) : null;
+  const LangBtn = showLang ? <LangSwitch kind={st.lang_style} lang={lang} setLang={setLang} label={str.language} /> : null;
   const Brand = (
     <a href="#top" onClick={editing ? (e) => e.preventDefault() : undefined} className={`flex min-w-0 items-center gap-2.5 ${s.variant === "centered" ? "flex-col gap-1.5 text-center" : ""}`}>
       <Logo className={s.variant === "centered" ? "h-12 w-12" : "h-10 w-10"} />
@@ -200,8 +239,24 @@ function HeroText({ center, light, size = "xl" }) {
   );
 }
 
+const blobs = (
+  <>
+    <span aria-hidden="true" className="s-decor s-float pointer-events-none absolute -left-24 top-10 h-72 w-72 rounded-full bg-[var(--s-primary)] opacity-20 blur-3xl" />
+    <span aria-hidden="true" className="s-decor s-float pointer-events-none absolute -right-20 top-40 h-80 w-80 rounded-full bg-[var(--s-accent)] opacity-25 blur-3xl" style={{ animationDelay: "1.5s" }} />
+  </>
+);
+
 function Hero({ s }) {
   const v = s.variant;
+  // Without a photo every layout but the full-photo one is centred text.
+  if (s.content.show_image === false && v !== "fullbleed") {
+    return (
+      <Section section={s} className="overflow-hidden">
+        {blobs}
+        <Container className="relative py-6"><HeroText center size="xxl" /></Container>
+      </Section>
+    );
+  }
   if (v === "fullbleed") {
     return (
       <Section section={s} pad={false} style={{ "--t-ink": "#fff", "--t-muted": "rgba(255,255,255,.85)", "--t-card": "rgba(255,255,255,.14)", "--t-line": "rgba(255,255,255,.3)" }}>
@@ -216,8 +271,7 @@ function Hero({ s }) {
   if (v === "centered") {
     return (
       <Section section={s} className="overflow-hidden">
-        <span aria-hidden="true" className="s-float pointer-events-none absolute -left-24 top-10 h-72 w-72 rounded-full bg-[var(--s-primary)] opacity-20 blur-3xl" />
-        <span aria-hidden="true" className="s-float pointer-events-none absolute -right-20 top-40 h-80 w-80 rounded-full bg-[var(--s-accent)] opacity-25 blur-3xl" style={{ animationDelay: "1.5s" }} />
+        {blobs}
         <Container className="relative">
           <HeroText center size="xxl" />
           <Reveal delay={0.2}><Img className="mx-auto mt-14 aspect-[16/7] w-full !rounded-[var(--s-radius-big)] shadow-[0_40px_80px_-40px_rgba(0,0,0,.45)]" eager seed={1} /></Reveal>
@@ -234,7 +288,7 @@ function Hero({ s }) {
             <Img className="row-span-2 h-full" eager seed={0} />
             <Img k="image2" className="h-full" seed={2} />
             <Img k="image3" className="h-full" seed={4} />
-            <span className="absolute -bottom-5 left-1/2 grid h-24 w-24 -translate-x-1/2 place-items-center rounded-full bg-[var(--s-accent)] text-center text-[12px] font-bold uppercase leading-tight text-[var(--s-ink)] shadow-xl ring-8 ring-[var(--t-bg)]">
+            <span className="s-decor absolute -bottom-5 left-1/2 grid h-24 w-24 -translate-x-1/2 place-items-center rounded-full bg-[var(--s-accent)] text-center text-[12px] font-bold uppercase leading-tight text-[var(--s-ink)] shadow-xl ring-8 ring-[var(--t-bg)]">
               <Sparkles size={26} />
             </span>
           </Reveal>
@@ -248,7 +302,7 @@ function Hero({ s }) {
         <Container className="grid items-center gap-12 md:grid-cols-2">
           <HeroText />
           <Reveal delay={0.1} className="relative mx-auto w-full max-w-[420px]">
-            <span aria-hidden="true" className="absolute -inset-4 rounded-t-full border-2 border-dashed border-[var(--t-hi)] opacity-40" />
+            <span aria-hidden="true" className="s-decor absolute -inset-4 rounded-t-full border-2 border-dashed border-[var(--t-hi)] opacity-40" />
             <Img className="aspect-[4/5] w-full !rounded-b-[var(--s-radius)] !rounded-t-full border-[6px] border-[var(--t-card)] shadow-[0_30px_60px_-30px_rgba(0,0,0,.5)]" eager />
             <span className="absolute -bottom-4 -left-4 rounded-[var(--s-radius)] bg-[var(--s-primary)] px-5 py-3 text-[var(--s-on-primary)] shadow-xl"><ShopName className="text-xl" /></span>
           </Reveal>
@@ -280,8 +334,8 @@ function Hero({ s }) {
       <Container className="grid items-center gap-12 md:grid-cols-[1.1fr_1fr] md:gap-16">
         <HeroText />
         <Reveal delay={0.1} className="relative">
-          <span aria-hidden="true" className="absolute -right-6 -top-6 h-40 w-40 rounded-full bg-[var(--s-accent)] opacity-60 blur-2xl" />
-          <span aria-hidden="true" className="absolute -bottom-6 -left-6 h-full w-full rounded-[var(--s-radius-big)] bg-[var(--s-tint)]" />
+          <span aria-hidden="true" className="s-decor absolute -right-6 -top-6 h-40 w-40 rounded-full bg-[var(--s-accent)] opacity-60 blur-2xl" />
+          <span aria-hidden="true" className="s-decor absolute -bottom-6 -left-6 h-full w-full rounded-[var(--s-radius-big)] bg-[var(--s-tint)]" />
           <Img className="relative aspect-[4/5] w-full !rounded-[var(--s-radius-big)] shadow-[0_30px_70px_-35px_rgba(0,0,0,.55)]" eager />
           <HoursChip />
         </Reveal>
@@ -294,9 +348,10 @@ function HoursChip() {
   const { brand, lang } = useSite();
   const str = useStr();
   const sum = hoursSummary(brand, lang);
+  const fact = useFact("hours");
   if (!sum) return null;
   return (
-    <span className="absolute -bottom-5 right-4 max-w-[85%] rounded-[var(--s-radius)] bg-[var(--t-bg)] px-4 py-3 shadow-xl ring-1 ring-[var(--t-line)]">
+    <span {...fact} className="absolute -bottom-5 right-4 max-w-[85%] rounded-[var(--s-radius)] bg-[var(--t-bg)] px-4 py-3 shadow-xl ring-1 ring-[var(--t-line)]">
       <span className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wider text-[var(--t-hi)]"><Clock size={13} /> {str.hours}</span>
       <span className="mt-0.5 block text-[14px] font-medium">{sum}</span>
     </span>
@@ -641,8 +696,8 @@ function Offer({ s }) {
   }
   return (
     <Section section={s} className="overflow-hidden">
-      <span aria-hidden="true" className="absolute -left-16 -top-16 h-56 w-56 rounded-full bg-[var(--t-hi)] opacity-30 blur-2xl" />
-      <span aria-hidden="true" className="absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-white opacity-10 blur-2xl" />
+      <span aria-hidden="true" className="s-decor absolute -left-16 -top-16 h-56 w-56 rounded-full bg-[var(--t-hi)] opacity-30 blur-2xl" />
+      <span aria-hidden="true" className="s-decor absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-white opacity-10 blur-2xl" />
       <Container narrow className="relative text-center">
         <Reveal>
           <T k="kicker" as="p" className="text-[13px] font-bold uppercase tracking-[0.2em] text-[var(--t-hi)]" />
@@ -873,8 +928,8 @@ function Cta({ s }) {
       <Section section={s} style={{ "--t-bg": "var(--s-bg)" }}>
         <Container>
           <Reveal className="relative overflow-hidden rounded-[var(--s-radius-big)] bg-[var(--s-primary)] px-7 py-14 text-center text-[var(--s-on-primary)] sm:px-14" >
-            <span aria-hidden="true" className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-[var(--s-accent)] opacity-50 blur-2xl" />
-            <span aria-hidden="true" className="absolute -bottom-16 -left-10 h-56 w-56 rounded-full bg-white opacity-10 blur-xl" />
+            <span aria-hidden="true" className="s-decor absolute -right-10 -top-10 h-48 w-48 rounded-full bg-[var(--s-accent)] opacity-50 blur-2xl" />
+            <span aria-hidden="true" className="s-decor absolute -bottom-16 -left-10 h-56 w-56 rounded-full bg-white opacity-10 blur-xl" />
             <div className="relative" style={{ "--t-btn": "var(--s-on-primary)", "--t-on-btn": "var(--s-primary)", "--t-ink": "var(--s-on-primary)" }}>
               <T k="title" as="h2" className="s-head block text-4xl sm:text-5xl" ph="Heading" />
               <T k="text" as="p" className="mx-auto mt-4 block max-w-xl text-[18px] opacity-90" />
@@ -934,9 +989,10 @@ function HoursTable() {
   );
 }
 
-function InfoRow({ icon: I, label, children }) {
+function InfoRow({ icon: I, label, children, fact }) {
+  const props = useFact(fact);
   return (
-    <div className="flex gap-4">
+    <div {...(fact ? props : {})} className="flex gap-4">
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[var(--t-card)] text-[var(--t-hi)] ring-1 ring-[var(--t-line)]"><I size={19} /></span>
       <div className="min-w-0 flex-1">
         <p className="text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{label}</p>
@@ -954,22 +1010,31 @@ function ContactInfo({ showHours = true }) {
   const stop = editing ? (e) => e.preventDefault() : undefined;
   return (
     <div className="space-y-6">
-      <InfoRow icon={MapPin} label={str.address}><address className="not-italic">{lines.map((l, i) => <span key={i} className={`block ${i === 0 ? "font-semibold" : ""}`}>{l}</span>)}</address></InfoRow>
+      <InfoRow icon={MapPin} label={str.address} fact="address"><address className="not-italic">{lines.map((l, i) => <span key={i} className={`block ${i === 0 ? "font-semibold" : ""}`}>{l}</span>)}</address></InfoRow>
       {showHours && hoursRows(brand, lang).length > 0 && (
-        <InfoRow icon={Clock} label={str.hours}><HoursTable />{note && <p className="mt-2 text-[14px] text-[var(--t-muted)]">{note}</p>}</InfoRow>
+        <InfoRow icon={Clock} label={str.hours} fact="hours"><HoursTable />{note && <p className="mt-2 text-[14px] text-[var(--t-muted)]">{note}</p>}</InfoRow>
       )}
       {brand.phones.length > 0 && (
-        <InfoRow icon={Phone} label={str.phone}>{brand.phones.map((p) => <a key={p} href={telHref(p)} onClick={stop} className="block font-semibold hover:text-[var(--t-hi)]">{p}</a>)}</InfoRow>
+        <InfoRow icon={Phone} label={str.phone} fact="phones">{brand.phones.map((p) => <a key={p} href={telHref(p)} onClick={stop} className="block font-semibold hover:text-[var(--t-hi)]">{p}</a>)}</InfoRow>
       )}
       {brand.emails.length > 0 && (
-        <InfoRow icon={Mail} label="Email">{brand.emails.map((e) => <a key={e} href={`mailto:${e}`} onClick={stop} className="block break-all hover:text-[var(--t-hi)]">{e}</a>)}</InfoRow>
+        <InfoRow icon={Mail} label="Email" fact="emails">{brand.emails.map((e) => <a key={e} href={`mailto:${e}`} onClick={stop} className="block break-all hover:text-[var(--t-hi)]">{e}</a>)}</InfoRow>
       )}
     </div>
   );
 }
 
 function MapFrame({ className = "" }) {
-  const { brand, lang } = useSite();
+  const { brand, lang, editing } = useSite();
+  const fact = useFact("maps");
+  // In the builder the map is not interactive: a tap opens the shop details.
+  if (editing) {
+    return (
+      <span {...fact} className={`relative block ${className}`}>
+        <iframe title="Map" src={mapEmbedUrl(brand)} loading="lazy" className="pointer-events-none absolute inset-0 h-full w-full border-0" />
+      </span>
+    );
+  }
   return <iframe title={`Map: ${pick(brand, "shop_name", lang)}`} src={mapEmbedUrl(brand)} loading="lazy" referrerPolicy="no-referrer-when-downgrade" className={`w-full border-0 ${className}`} />;
 }
 
@@ -978,6 +1043,10 @@ function Contact({ s }) {
   const c = s.content;
   const { brand, lang } = useSite();
   const str = useStr();
+  const fa = useFact("address");
+  const fh = useFact("hours");
+  const fp = useFact("phones");
+  const fw = useFact("whatsapp");
   const actions = (
     <div className="flex flex-wrap gap-3">
       <QuickAction action="directions" kind="primary" />
@@ -991,8 +1060,8 @@ function Contact({ s }) {
         <Container narrow className="text-center">
           <Heading center />
           <Reveal delay={0.1}>
-            <p className="mt-6 flex items-start justify-center gap-2 text-[17px]"><MapPin size={20} className="mt-0.5 shrink-0 text-[var(--t-hi)]" /> {formatAddress(brand, lang)}</p>
-            {c.show_hours && hoursSummary(brand, lang) && <p className="mt-2 flex items-center justify-center gap-2 text-[15.5px] text-[var(--t-muted)]"><Clock size={17} /> {hoursSummary(brand, lang)}</p>}
+            <p {...fa} className="mt-6 flex items-start justify-center gap-2 text-[17px]"><MapPin size={20} className="mt-0.5 shrink-0 text-[var(--t-hi)]" /> {formatAddress(brand, lang)}</p>
+            {c.show_hours && hoursSummary(brand, lang) && <p {...fh} className="mt-2 flex items-center justify-center gap-2 text-[15.5px] text-[var(--t-muted)]"><Clock size={17} /> {hoursSummary(brand, lang)}</p>}
             <div className="mt-8 flex justify-center">{actions}</div>
           </Reveal>
         </Container>
@@ -1008,8 +1077,8 @@ function Contact({ s }) {
             <Reveal className="max-w-md rounded-[var(--s-radius-big)] bg-[var(--t-bg)] p-7 shadow-2xl ring-1 ring-[var(--t-line)]">
               <T k="kicker" as="p" className="text-[13px] font-bold uppercase tracking-[0.16em] text-[var(--t-hi)]" />
               <T k="title" as="h2" className="s-head mt-2 block text-3xl" />
-              <p className="mt-3 text-[15.5px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
-              {c.show_hours && hoursSummary(brand, lang) && <p className="mt-2 text-[14.5px] font-medium">{hoursSummary(brand, lang)}</p>}
+              <p {...fa} className="mt-3 text-[15.5px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
+              {c.show_hours && hoursSummary(brand, lang) && <p {...fh} className="mt-2 text-[14.5px] font-medium">{hoursSummary(brand, lang)}</p>}
               <div className="mt-6">{actions}</div>
             </Reveal>
           </Container>
@@ -1025,10 +1094,10 @@ function Contact({ s }) {
         <Container>
           <Heading center />
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Reveal className={card}><MapPin className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{str.address}</p><p className="mt-1 text-[15.5px]">{formatAddress(brand, lang)}</p></Reveal>
-            {c.show_hours && hoursRows(brand, lang).length > 0 && <Reveal delay={0.05} className={card}><Clock className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{str.hours}</p><div className="mt-1 space-y-0.5 text-[15px]">{hoursRows(brand, lang).map((r) => <p key={r.days}><span className="font-semibold">{r.days}</span> · {r.text}</p>)}</div></Reveal>}
-            {brand.phones[0] && <Reveal delay={0.1} className={card}><Phone className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{str.phone}</p>{brand.phones.map((p) => <a key={p} href={telHref(p)} className="mt-1 block text-[16px] font-semibold">{p}</a>)}</Reveal>}
-            {wa && <Reveal delay={0.15} className={card}><MessageCircle className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">WhatsApp</p><a href={waHref(wa)} target="_blank" rel="noreferrer" className="mt-1 block text-[16px] font-semibold">{prettyMobile(brand.whatsapp) || wa}</a></Reveal>}
+            <Reveal className={card}><div {...fa}><MapPin className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{str.address}</p><p className="mt-1 text-[15.5px]">{formatAddress(brand, lang)}</p></div></Reveal>
+            {c.show_hours && hoursRows(brand, lang).length > 0 && <Reveal delay={0.05} className={card}><div {...fh}><Clock className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{str.hours}</p><div className="mt-1 space-y-0.5 text-[15px]">{hoursRows(brand, lang).map((r) => <p key={r.days}><span className="font-semibold">{r.days}</span> · {r.text}</p>)}</div></div></Reveal>}
+            {brand.phones[0] && <Reveal delay={0.1} className={card}><div {...fp}><Phone className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">{str.phone}</p>{brand.phones.map((p) => <a key={p} href={telHref(p)} className="mt-1 block text-[16px] font-semibold">{p}</a>)}</div></Reveal>}
+            {wa && <Reveal delay={0.15} className={card}><div {...fw}><MessageCircle className="text-[var(--t-hi)]" /><p className="mt-4 text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-muted)]">WhatsApp</p><a href={waHref(wa)} target="_blank" rel="noreferrer" className="mt-1 block text-[16px] font-semibold">{prettyMobile(brand.whatsapp) || wa}</a></div></Reveal>}
           </div>
           {c.show_map !== false && <Reveal delay={0.1} className="mt-5 overflow-hidden rounded-[var(--s-radius-big)] ring-1 ring-[var(--t-line)]"><MapFrame className="h-[380px]" /></Reveal>}
           <div className="mt-8 flex justify-center">{actions}</div>
@@ -1061,10 +1130,11 @@ const SOCIAL = [
 
 function Social({ className = "" }) {
   const { brand } = useSite();
+  const fact = useFact("social");
   const list = SOCIAL.filter((x) => brand[x.key]);
   if (!list.length) return null;
   return (
-    <ul className={`flex flex-wrap gap-2 ${className}`}>
+    <ul {...fact} className={`flex flex-wrap gap-2 ${className}`}>
       {list.map((x) => (
         <li key={x.key}>
           <a href={brand[x.key]} target="_blank" rel="noreferrer" aria-label={x.label}
@@ -1082,10 +1152,14 @@ function Footer({ s }) {
   const str = useStr();
   const c = s.content;
   const has = useHas();
+  const fa = useFact("address");
+  const fl = useFact("legal_name");
+  const fh = useFact("hours");
+  const fp = useFact("phones");
   const year = new Date().getFullYear();
   const bottom = (
     <div className="flex flex-col items-center justify-between gap-3 border-t border-[var(--t-line)] pt-6 text-[14px] text-[var(--t-muted)] sm:flex-row">
-      <span>© {year} {pick(brand, "legal_name", lang) || pick(brand, "shop_name", lang)}</span>
+      <span {...fl}>© {year} {pick(brand, "legal_name", lang) || pick(brand, "shop_name", lang)}</span>
       <span className="flex items-center gap-5">
         {has("note") && <T k="note" ph="Note (like GST number)" />}
         {c.show_staff !== false && <a href="/admin" onClick={editing ? (e) => e.preventDefault() : undefined} className="hover:text-[var(--t-ink)]">{str.staff}</a>}
@@ -1097,7 +1171,7 @@ function Footer({ s }) {
       <Section section={s} className="overflow-hidden">
         <Container>
           <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
-            <p className="max-w-sm text-[15.5px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
+            <p {...fa} className="max-w-sm text-[15.5px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
             <Social />
           </div>
           <ShopName className="my-10 block break-words text-[17vw] leading-[0.85] sm:text-[12vw] lg:text-[10rem]" />
@@ -1113,14 +1187,14 @@ function Footer({ s }) {
           <div className="grid gap-10 pb-10 sm:grid-cols-2 lg:grid-cols-4">
             <div className="lg:col-span-2">
               <div className="flex items-center gap-3"><Logo className="h-12 w-12" /><ShopName className="text-3xl" /></div>
-              <p className="mt-4 max-w-sm text-[15.5px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
+              <p {...fa} className="mt-4 max-w-sm text-[15.5px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
               <Social className="mt-6" />
             </div>
-            <div>
+            <div {...fh}>
               <p className="text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-hi)]">{str.hours}</p>
               <div className="mt-3 space-y-1 text-[15px]">{hoursRows(brand, lang).map((r) => <p key={r.days}><span className="font-semibold">{r.days}</span> <span className="text-[var(--t-muted)]">{r.text}</span></p>)}</div>
             </div>
-            <div>
+            <div {...fp}>
               <p className="text-[12.5px] font-bold uppercase tracking-wider text-[var(--t-hi)]">{str.contact}</p>
               <div className="mt-3 space-y-1 text-[15px]">
                 {brand.phones.map((p) => <a key={p} href={telHref(p)} className="block hover:text-[var(--t-hi)]">{p}</a>)}
@@ -1138,7 +1212,7 @@ function Footer({ s }) {
       <Container>
         <div className="flex flex-col items-center gap-5 pb-8 text-center">
           <div className="flex items-center gap-3"><Logo className="h-12 w-12" /><ShopName className="text-3xl" /></div>
-          <p className="max-w-md text-[15px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
+          <p {...fa} className="max-w-md text-[15px] text-[var(--t-muted)]">{formatAddress(brand, lang)}</p>
           <Social />
         </div>
         {bottom}
@@ -1159,10 +1233,12 @@ export function Floating() {
   const str = useStr();
   const st = config.settings || {};
   const wa = brand.whatsapp || (brand.phones || [])[0];
+  const fw = useFact("whatsapp");
+  const fp = useFact("phones");
   return (
     <>
       {st.whatsapp_button && wa && (
-        <a href={waHref(wa, str.enquiryShop)} target="_blank" rel="noreferrer" aria-label={str.whatsapp} onClick={editing ? (e) => e.preventDefault() : undefined}
+        <a href={waHref(wa, str.enquiryShop)} target="_blank" rel="noreferrer" aria-label={str.whatsapp} onClick={editing ? (e) => e.preventDefault() : undefined} {...fw}
           className={`fixed right-4 z-50 grid h-14 w-14 place-items-center rounded-full bg-[#25D366] text-white shadow-[0_12px_30px_-8px_rgba(37,211,102,.7)] transition-transform hover:scale-105 ${st.call_bar ? "bottom-24 md:bottom-6" : "bottom-6"}`}>
           <MessageCircle size={26} fill="currentColor" strokeWidth={0} /><span className="absolute inset-0 animate-ping rounded-full bg-[#25D366] opacity-20" />
         </a>
@@ -1171,7 +1247,7 @@ export function Floating() {
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--s-line)] bg-[color-mix(in_srgb,var(--s-bg)_94%,transparent)] px-4 pt-3 backdrop-blur-md md:hidden"
           style={{ ...{ "--t-btn": "var(--s-primary)", "--t-on-btn": "var(--s-on-primary)", "--t-ink": "var(--s-ink)", "--t-line": "var(--s-line)", "--t-bg": "var(--s-bg)" }, paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <div className="grid grid-cols-[1.3fr_1fr] gap-3">
-            <a href={brand.phones[0] ? telHref(brand.phones[0]) : "#"} className={`${btnClass(theme.b, "primary")} w-full`}><Phone size={18} /> {str.call}</a>
+            <a href={brand.phones[0] ? telHref(brand.phones[0]) : "#"} {...fp} className={`${btnClass(theme.b, "primary")} w-full`}><Phone size={18} /> {str.call}</a>
             <QuickAction action="directions" kind="secondary" className="w-full !px-3" label={str.visit} />
           </div>
         </div>
