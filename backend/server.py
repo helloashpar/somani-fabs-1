@@ -30,6 +30,7 @@ import image_service
 import messaging
 import permissions
 import watermark
+import websites
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(
@@ -213,6 +214,9 @@ async def log_action(user, action, details=""):
         "id": new_id(), "admin_id": user["id"], "admin_username": user["name"],
         "action": action, "details": details, "timestamp": iso(),
     })
+
+
+websites.init(lambda: db, get_current_user, log_action)
 
 
 # ---------- Models ----------
@@ -1442,7 +1446,7 @@ async def get_settings(user=Depends(get_current_user)):
     return s or {}
 
 
-# ---------- General (shop name, logo, contact, website) ----------
+# ---------- General (shop name, logo, address, hours, contact, social) ----------
 async def current_brand() -> Dict[str, Any]:
     s = await db.settings.find_one({"id": "global"}, {"_id": 0, "brand": 1, "brand_logo_v": 1}) or {}
     out = brand.merged(s.get("brand"))
@@ -1473,7 +1477,9 @@ async def public_logo(v: Optional[str] = None):
 async def update_brand(body: Dict[str, Any], user=Depends(get_current_user)):
     permissions.require(user, "settings_manage")
     fields = brand.clean(body)
-    upd: Dict[str, Any] = {f"brand.{k}": v for k, v in fields.items()}
+    stored = (await db.settings.find_one({"id": "global"}, {"_id": 0, "brand": 1}) or {}).get("brand") or {}
+    keep, older = brand.upgrade(stored, fields)
+    upd: Dict[str, Any] = {f"brand.{k}": v for k, v in {**keep, **fields}.items()}
     if "logo" in body:
         logo = body.get("logo") or ""
         if logo.startswith("/api/public/logo"):
@@ -1485,9 +1491,12 @@ async def update_brand(body: Dict[str, Any], user=Depends(get_current_user)):
             upd.update(brand_logo="", brand_logo_v="")
     if not upd:
         raise HTTPException(400, "Nothing to update")
-    await db.settings.update_one({"id": "global"}, {"$set": upd}, upsert=True)
+    change: Dict[str, Any] = {"$set": upd}
+    if older:
+        change["$unset"] = {f"brand.{k}": "" for k in older}
+    await db.settings.update_one({"id": "global"}, change, upsert=True)
     await log_action(user, "update_general", ", ".join(sorted(
-        {k.split(".", 1)[-1] for k in upd if k != "brand_logo_v"})))
+        {k.split(".", 1)[-1] for k in {**fields, **({"logo": 1} if "logo" in body else {})}})))
     return await current_brand()
 
 
@@ -1697,6 +1706,8 @@ async def health():
 app.include_router(api)
 app.include_router(messaging.router)
 app.include_router(messaging.public_router)
+app.include_router(websites.router)
+app.include_router(websites.public_router)
 app.add_middleware(
     CORSMiddleware, allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
@@ -1892,6 +1903,7 @@ async def _seed_database():
             await db.categories.insert_one({"id": new_id(), **c})
     await _upgrade_item_descriptions()
     await permissions.migrate(db)
+    await websites.ensure_seed(db)
     await _migrate_category_kinds()
     # settings + display secret
     s = await db.settings.find_one({"id": "global"})

@@ -103,9 +103,11 @@ async def env(monkeypatch):
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("WHATSAPP_APP_SECRET", SECRET)
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify-me")
-    await db.shop_settings.insert_one({"shop_id": "default", "shop_profile": {
-        "name": "Test Shop", "phone": "+91 90000 00000", "slug": "test-shop",
-        "review_url": "https://g.page/r/test", "maps_url": "https://maps.app.goo.gl/test"},
+    # Name, phone and links come from Shop setup > General; WhatsApp keeps the slug.
+    await db.settings.insert_one({"id": "global", "brand": {
+        "shop_name": "Test Shop", "phones": ["+91 90000 00000"],
+        "reviews_url": "https://g.page/r/test", "maps_url": "https://maps.app.goo.gl/test"}})
+    await db.shop_settings.insert_one({"shop_id": "default", "shop_profile": {"slug": "test-shop"},
         "whatsapp": {"language": "english"}})
     yield db, meta
     if real:
@@ -477,15 +479,17 @@ async def test_super_can_update_config(client):
     c, (db, _) = client
     h = {"X-Role": "super"}
     r = await c.put("/api/whatsapp/config", headers=h, json={
-        "shop_profile": {"name": "New", "slug": "new-shop", "review_url": "https://g.page/x"},
+        "shop_profile": {"slug": "new-shop"},
         "whatsapp": {"language": "hindi", "send_looks": {"allow_staff": False}}})
     assert r.status_code == 200, r.text
     cfg = (await c.get("/api/whatsapp/config", headers=h)).json()
     assert cfg["whatsapp"]["language"] == "hindi"
     assert cfg["whatsapp"]["send_looks"] == {"on": True, "allow_staff": False}
     assert cfg["shop_profile"]["slug"] == "new-shop"
-    bad = await c.put("/api/whatsapp/config", headers=h, json={"shop_profile": {"review_url": "http://x"}})
+    assert cfg["shop_profile"]["name"] == "Test Shop"  # from General, read-only here
+    bad = await c.put("/api/whatsapp/config", headers=h, json={"shop_profile": {"slug": "Bad Slug!"}})
     assert bad.status_code == 400
+    await db.settings.update_one({"id": "global"}, {"$set": {"brand.shop_name": "New"}})
     preview = (await c.get("/api/whatsapp/templates", headers=h)).json()
     assert preview["language"] == "hindi" and "New" in preview["templates"][0]["body"]
 

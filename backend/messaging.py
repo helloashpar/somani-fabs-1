@@ -31,6 +31,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+import brand
 import permissions
 import whatsapp_service as wa
 import whatsapp_templates as tpl
@@ -105,8 +106,10 @@ def spawn(coro):
 
 
 # ---------- Shop settings ----------
-DEFAULT_PROFILE = {"name": "", "short_name": "", "address": "", "city": "", "phone": "",
-                   "maps_url": "", "review_url": "", "slug": ""}
+# The shop's name, address, phone and map / review links come from Shop setup >
+# General (brand.py), the one place they are kept. WhatsApp only adds the slug
+# used in its button links.
+DEFAULT_PROFILE = {"slug": ""}
 DEFAULT_WA = {
     "language": "hinglish",
     "consent_default": False,
@@ -124,9 +127,18 @@ def _merge(defaults: Dict, stored: Dict) -> Dict:
     return out
 
 
+async def general_profile() -> Dict[str, str]:
+    """What messages say about the shop, from Shop setup > General."""
+    doc = await db.settings.find_one({"id": "global"}, {"_id": 0, "brand": 1}) or {}
+    b = brand.merged(doc.get("brand"))
+    return {"name": b["shop_name"], "short_name": b["short_name"], "address": b["address"],
+            "city": b["city"], "phone": (b["phones"] or [""])[0],
+            "maps_url": b["maps_url"], "review_url": b["reviews_url"]}
+
+
 async def shop_settings() -> Dict[str, Any]:
     doc = await db.shop_settings.find_one({"shop_id": SHOP_ID}, {"_id": 0}) or {}
-    return {"shop_profile": _merge(DEFAULT_PROFILE, doc.get("shop_profile")),
+    return {"shop_profile": {**await general_profile(), **_merge(DEFAULT_PROFILE, doc.get("shop_profile"))},
             "whatsapp": _merge(DEFAULT_WA, doc.get("whatsapp")),
             "wa_last_webhook_at": doc.get("wa_last_webhook_at"),
             "wa_number": doc.get("wa_number", "")}
@@ -686,7 +698,6 @@ async def resend_receipt(sid: str, user=Depends(current_user)):
 
 
 # ---------- Super admin: Marketing tab ----------
-_URL = re.compile(r"^https://\S+$")
 
 
 def _clean_config(body: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
@@ -697,9 +708,6 @@ def _clean_config(body: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, An
         p["slug"] = p["slug"].lower()
         if p["slug"] and not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,39}", p["slug"]):
             raise HTTPException(400, "Slug: 2-40 small letters, numbers or dashes")
-        for k in ("maps_url", "review_url"):
-            if p[k] and not _URL.match(p[k]):
-                raise HTTPException(400, "Links must start with https://")
         upd["shop_profile"] = p
     if "whatsapp" in body:
         w = _merge(current["whatsapp"], body["whatsapp"] or {})
@@ -882,8 +890,8 @@ async def shop_qr(user=Depends(current_user)):
 async def short_link(slug: str, kind: str):
     """Template buttons need one fixed base URL, so they point here and we
     redirect to the shop's own Google review / Maps link."""
-    doc = await db.shop_settings.find_one({"shop_profile.slug": slug.lower()}, {"_id": 0, "shop_profile": 1})
-    profile = (doc or {}).get("shop_profile") or {}
+    doc = await db.shop_settings.find_one({"shop_profile.slug": slug.lower()}, {"_id": 0, "shop_id": 1})
+    profile = await general_profile() if doc else {}
     target = {"review": profile.get("review_url"), "map": profile.get("maps_url")}.get(kind)
     if not target:
         raise HTTPException(404, "Not found")

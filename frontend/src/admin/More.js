@@ -2,13 +2,14 @@ import React, { useState, useEffect } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { Monitor, MessageCircle, Copy, Loader2, Tag, ImagePlus, ScrollText, ListPlus, Languages, Shirt, SlidersHorizontal, Users, LogOut, Layers, Megaphone, Settings2, UserCog, Store } from "lucide-react";
+import { Monitor, MessageCircle, Copy, Loader2, Tag, ImagePlus, ScrollText, ListPlus, Languages, Shirt, SlidersHorizontal, Users, LogOut, Layers, Megaphone, Settings2, UserCog, Store, Globe } from "lucide-react";
 import { WhatsAppScreen } from "@/admin/Marketing";
 import CategoryConfig from "@/admin/CategoryConfig";
 import Collection from "@/admin/Collection";
 import SessionFields from "@/admin/SessionFields";
 import Team from "@/admin/Team";
 import General from "@/admin/General";
+import Websites from "@/admin/website/Websites";
 import { useBrand } from "@/lib/brand";
 import { can, isSuper } from "@/admin/perms";
 import { Button, Card, CardHeader, Crumbs, Field, MenuGroup, MenuRow, Page, PageHeader, Segmented, Skeleton, Tiles, inputCls } from "@/admin/ui";
@@ -30,6 +31,7 @@ export const MORE_ITEMS = [
   { id: "config", group: "catalog", icon: SlidersHorizontal, label: "set_configuration", sub: "tile_config_sub", ok: (u) => can(u, "catalog_manage"), header: true },
   { id: "whatsapp", group: "marketing", icon: MessageCircle, label: "WhatsApp", sub: "tile_whatsapp_sub", ok: (u) => can(u, "marketing_manage"), header: true },
   { id: "general", group: "shop", icon: Store, label: "set_general", sub: "tile_general_sub", ok: (u) => can(u, "settings_manage"), header: true },
+  { id: "website", group: "shop", icon: Globe, label: "set_website", sub: "tile_website_sub", ok: (u) => can(u, "settings_manage"), header: true },
   { id: "display", group: "shop", icon: Monitor, label: "set_display", sub: "tile_display_sub", ok: () => true },
   { id: "language", group: "shop", icon: Languages, label: "app_language", sub: "tile_language_sub", ok: (u) => can(u, "settings_manage"), header: true },
   { id: "watermark", group: "shop", icon: Tag, label: "watermark", sub: "tile_watermark_sub", ok: (u) => can(u, "settings_manage") },
@@ -103,6 +105,7 @@ export function MoreItem({ id, user, onUp }) {
   const g = GROUPS.find((x) => x.id === it.group);
   const body = {
     general: <General />,
+    website: <Websites />,
     collection: <Collection />,
     config: <CategoryConfig />,
     whatsapp: <WhatsAppScreen />,

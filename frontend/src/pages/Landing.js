@@ -1,22 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Phone, Navigation, MapPin, ReceiptText, BadgeIndianRupee, Gem, RefreshCcw, Sparkle, Languages, Mail, Clock, MessageCircle, Instagram, Facebook, Youtube, Globe } from "lucide-react";
-import { useBrand, pick, telHref, waHref } from "@/lib/brand";
+import { Phone, Navigation, MapPin, ReceiptText, BadgeIndianRupee, Gem, RefreshCcw, Sparkle, Languages, Mail, Clock, MessageCircle, Instagram, Facebook, Youtube, Globe, Twitter, Linkedin, Star } from "lucide-react";
+import { useBrand, pick, telHref, waHref, prettyMobile, formatAddress, directionsUrl, mapEmbedUrl, hoursSummary } from "@/lib/brand";
 
 // Public landing page, designed phone-first. Tokens and motifs (jharokha
 // arch, leheriya ribbon, receipt edge) live under `.sf` in index.css.
-// The shop's name, logo, contact, address and story come from Shop setup >
-// General (useBrand), so they change here without a code change.
-
-function fullAddress(b) {
-  return [b.address_line1, b.address_line2].filter(Boolean).join(", ");
-}
-function directionsUrl(b) {
-  return b.directions_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${b.shop_name}, ${fullAddress(b)}`)}`;
-}
-function mapEmbed(b) {
-  return `https://www.google.com/maps?q=${encodeURIComponent(`${b.shop_name}, ${fullAddress(b)}`)}&output=embed`;
-}
+// This is the shop's classic website (Shop setup > Website, locked). The
+// shop's name, logo, contact, address and hours come from Shop setup >
+// General (useBrand), so they change here without a code change; the story,
+// tagline and colour are this page's own content (`brand.classic`).
 const BRANDS = [
   { name: "Raymond", src: "/images/brands/raymond.png", w: 313, h: 145 },
   { name: "Siyaram's", src: "/images/brands/siyarams.png", w: 214, h: 51 },
@@ -76,6 +68,8 @@ const COPY = {
     tapToCall: "Tap to call",
     whatsapp: "WhatsApp us",
     email: "Email",
+    reviews: "Google reviews",
+    reviewsCta: "Read or write a review",
     hours: "Open",
     follow: "Follow us",
     staff: "Staff login",
@@ -111,6 +105,8 @@ const COPY = {
     tapToCall: "फ़ोन करने के लिए दबाएँ",
     whatsapp: "WhatsApp करें",
     email: "ईमेल",
+    reviews: "Google रिव्यू",
+    reviewsCta: "रिव्यू पढ़ें या लिखें",
     hours: "खुलने का समय",
     follow: "हमसे जुड़िए",
     staff: "स्टाफ़ लॉगिन",
@@ -131,6 +127,7 @@ function initialLang() {
 // Lines built from the shop's details (Shop setup > General) in one language.
 function brandCopy(b, lang) {
   const hi = lang === "hi";
+  const lines = formatAddress(b, lang, "lines");
   const p = (k) => pick(b, k, lang);
   const year = b.founded_year;
   const since = year ? (hi ? `${year} से` : `Since ${year}`) : "";
@@ -150,9 +147,9 @@ function brandCopy(b, lang) {
       : `A family name ${city} has trusted${year ? ` since ${year}` : ""}`,
     storyBody: p("story_body"),
     founder: p("founder"),
-    address1: p("address_line1"),
-    address2: p("address_line2"),
-    hoursText: p("hours"),
+    address1: lines[0] || "",
+    address2: lines.slice(1).join(", "),
+    hoursText: [hoursSummary(b, lang), p("hours_note")].filter(Boolean).join(" · "),
     footerNote: p("footer_note"),
     mapTitle: hi ? `${p("shop_name")}, ${p("locality")}, ${city} का नक्शा` : `Map to ${b.shop_name}, ${b.locality}, ${b.city}`,
     footerLine: [p("legal_name"), city].filter(Boolean).join(" · "),
@@ -162,7 +159,9 @@ function brandCopy(b, lang) {
 // t = strings in the chosen language, o = the other language (accent lines).
 function useCopy() {
   const { lang, setLang } = useContext(LangCtx);
-  const b = useBrand();
+  const brand = useBrand();
+  // The classic page's own content sits beside the shop's details.
+  const b = { ...brand, ...brand.classic };
   const other = lang === "en" ? "hi" : "en";
   return { lang, setLang, b, t: { ...COPY[lang], ...brandCopy(b, lang) }, o: { ...COPY[other], ...brandCopy(b, other) } };
 }
@@ -525,11 +524,6 @@ function ContactCard({ href, icon: Icon, label, value, external }) {
   );
 }
 
-// "+919414422558" -> "+91 94144 22558"
-function prettyMobile(v) {
-  return v.replace(/^\+91(\d{5})(\d{5})$/, "+91 $1 $2");
-}
-
 function Visit() {
   const { t, b } = useCopy();
   return (
@@ -557,10 +551,11 @@ function Visit() {
             </div>
             {b.phones.map((p) => <ContactCard key={p} href={telHref(p)} icon={Phone} label={t.tapToCall} value={p} />)}
             {b.whatsapp && <ContactCard href={waHref(b.whatsapp)} icon={MessageCircle} label={t.whatsapp} value={prettyMobile(b.whatsapp)} external />}
-            {b.email && <ContactCard href={`mailto:${b.email}`} icon={Mail} label={t.email} value={b.email} />}
+            {b.emails.slice(0, 1).map((e) => <ContactCard key={e} href={`mailto:${e}`} icon={Mail} label={t.email} value={e} />)}
+            {b.reviews_url && <ContactCard href={b.reviews_url} icon={Star} label={t.reviews} value={t.reviewsCta} external />}
           </Reveal>
           <Reveal delay={0.1} className="relative min-h-[320px] overflow-hidden rounded-[28px] bg-[var(--sf-aqua-soft)] ring-1 ring-[var(--sf-line)]">
-            <iframe title={t.mapTitle} src={mapEmbed(b)}
+            <iframe title={t.mapTitle} src={mapEmbedUrl(b)}
               loading="lazy" referrerPolicy="no-referrer-when-downgrade" className="absolute inset-0 h-full w-full border-0" />
           </Reveal>
         </div>
@@ -573,6 +568,8 @@ const SOCIAL = [
   { key: "instagram", icon: Instagram, label: "Instagram" },
   { key: "facebook", icon: Facebook, label: "Facebook" },
   { key: "youtube", icon: Youtube, label: "YouTube" },
+  { key: "x", icon: Twitter, label: "X" },
+  { key: "linkedin", icon: Linkedin, label: "LinkedIn" },
   { key: "website", icon: Globe, label: "Website" },
 ];
 
@@ -632,7 +629,7 @@ export default function Landing() {
   const [lang, setLang] = useState(initialLang);
   const brand = useBrand();
   // The shop's colour replaces the crimson accent across the page.
-  const accent = /^#[0-9a-f]{6}$/i.test(brand.accent_color || "") ? brand.accent_color : null;
+  const accent = /^#[0-9a-f]{6}$/i.test(brand.classic.accent_color || "") ? brand.classic.accent_color : null;
   const theme = accent ? { "--sf-crimson": accent, "--sf-crimson-press": `color-mix(in srgb, ${accent} 80%, black)` } : undefined;
   useEffect(() => {
     try { localStorage.setItem(LANG_KEY, lang); } catch {}
@@ -648,9 +645,9 @@ export default function Landing() {
         <Header />
         <main>
           <Hero />
-          {brand.show_brands && <BrandWall />}
+          {brand.classic.show_brands && <BrandWall />}
           <Fabrics />
-          {brand.show_promise && <OurPromise />}
+          {brand.classic.show_promise && <OurPromise />}
           <Occasions />
           <Story />
           <Visit />

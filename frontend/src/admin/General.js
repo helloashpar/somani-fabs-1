@@ -1,17 +1,19 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Store, ImagePlus, Trash2, BookOpen, MapPin, Phone, Share2, Globe, Plus, X, ExternalLink, Languages } from "lucide-react";
+import { Store, ImagePlus, Trash2, MapPin, Phone, Share2, Plus, X, Clock, Map as MapIcon, Languages, Copy, ChevronDown } from "lucide-react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
-import { useBrandCtx } from "@/lib/brand";
+import { useBrandCtx, DAYS, DAY_NAMES, formatAddress, hoursSummary } from "@/lib/brand";
 import { Button, Card, CardHeader, Field, IconButton, Skeleton, Toggle, inputCls } from "@/admin/ui";
 
-// Shop setup > General: the shop's name, logo, contact details, address,
-// story and website options. Saved once for the whole shop and shown on the
-// public site (header, hero, story, visit, footer), the admin app (wordmark,
-// login, browser tab), the shop screen and exports.
+// Shop setup > General: only the basic facts about the shop (logo, names,
+// address, hours, map and review links, contact, social). It is the one place
+// they are kept: the websites, WhatsApp messages, the admin app, the shop
+// screen and exports all read them from here. What a website says beyond
+// these facts is set in Shop setup > Website.
 
 const MAX_PHONES = 4;
+const MAX_EMAILS = 3;
 const areaCls = `${inputCls} h-auto py-2.5 resize-y min-h-[88px]`;
 
 // Read a picked image file as a data URI.
@@ -34,38 +36,57 @@ function Text({ k, form, set, label, hint, placeholder, area, type = "text", max
   );
 }
 
-// English and Hindi versions of one field side by side. The Hindi one is
-// shown on the public site in Hindi; empty falls back to English.
-function Pair({ k, form, set, label, hint, area, maxLength }) {
-  const { t } = useLang();
+// A text visitors read, with optional versions in other languages. The main
+// box is the default; "Add language" opens a box per language (empty = the
+// main text is shown).
+function LangText({ k, form, set, label, hint, placeholder, maxLength, languages }) {
+  const [open, setOpen] = useState(() => languages.filter((l) => form[`${k}_${l.code}`]).map((l) => l.code));
+  const [menu, setMenu] = useState(false);
+  const ref = useRef(null);
+  const left = languages.filter((l) => !open.includes(l.code));
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setMenu(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menu]);
+  const add = (code) => { setOpen((o) => [...o, code]); setMenu(false); };
+  const remove = (code) => { setOpen((o) => o.filter((c) => c !== code)); set(`${k}_${code}`, ""); };
   return (
     <div>
-      <span className="block text-sm font-medium text-gray-800 mb-1.5">{label}</span>
-      <div className="grid sm:grid-cols-2 gap-2">
-        <Tag k={k} form={form} set={set} area={area} maxLength={maxLength} lang="en" aria={`${label} (English)`} placeholder="English" />
-        <Tag k={`${k}_hi`} form={form} set={set} area={area} maxLength={maxLength} lang="hi" aria={`${label} (हिंदी)`} placeholder={`हिंदी · ${t("gen_hi_optional")}`} />
+      <div className="flex items-end justify-between gap-2 mb-1.5">
+        <span className="text-sm font-medium text-gray-800">{label}</span>
+        {left.length > 0 && (
+          <div className="relative" ref={ref}>
+            <button type="button" data-testid={`gen-${k}-addlang`} onClick={() => (left.length === 1 ? add(left[0].code) : setMenu((m) => !m))}
+              className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-[13px] font-medium text-brand-700 hover:bg-brand-50">
+              <Languages size={14} aria-hidden="true" /> Add language {left.length > 1 && <ChevronDown size={13} aria-hidden="true" />}
+            </button>
+            {menu && (
+              <div className="absolute right-0 top-8 z-20 min-w-36 rounded-xl border border-gray-200 bg-white shadow-pop p-1">
+                {left.map((l) => (
+                  <button key={l.code} type="button" onClick={() => add(l.code)} className="block w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-50">{l.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+      <input data-testid={`gen-${k}`} value={form[k] ?? ""} placeholder={placeholder} maxLength={maxLength} aria-label={label}
+        onChange={(e) => set(k, e.target.value)} className={inputCls} />
+      {open.map((code) => {
+        const l = languages.find((x) => x.code === code);
+        return (
+          <div key={code} className="mt-2 flex items-center gap-2">
+            <span className="shrink-0 inline-flex items-center h-12 sm:h-11 px-3 rounded-xl bg-brand-50 text-brand-800 text-sm font-medium" lang={code}>{l ? l.name : code}</span>
+            <input data-testid={`gen-${k}_${code}`} lang={code} value={form[`${k}_${code}`] ?? ""} maxLength={maxLength}
+              aria-label={`${label} (${l ? l.name : code})`} placeholder={form[k] || ""} autoFocus={!form[`${k}_${code}`]}
+              onChange={(e) => set(`${k}_${code}`, e.target.value)} className={inputCls} />
+            <IconButton icon={X} label={`Remove ${l ? l.name : code}`} onClick={() => remove(code)} className="shrink-0" />
+          </div>
+        );
+      })}
       {hint && <span className="block text-[13px] text-gray-600 mt-1.5">{hint}</span>}
-    </div>
-  );
-}
-
-function Tag({ k, form, set, area, maxLength, lang, aria, placeholder }) {
-  const El = area ? "textarea" : "input";
-  return (
-    <El data-testid={`gen-${k}`} lang={lang} aria-label={aria} value={form[k] ?? ""} placeholder={placeholder} maxLength={maxLength}
-      onChange={(e) => set(k, e.target.value)} rows={area ? 3 : undefined} className={area ? areaCls : inputCls} />
-  );
-}
-
-function Switch({ k, form, set, label, hint }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3">
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm font-medium text-gray-900">{label}</span>
-        {hint && <span className="block text-[13px] text-gray-600">{hint}</span>}
-      </span>
-      <Toggle testid={`gen-${k}`} label={label} checked={!!form[k]} onChange={(v) => set(k, v)} />
     </div>
   );
 }
@@ -101,26 +122,88 @@ function LogoPicker({ logo, onChange, name }) {
   );
 }
 
-function Phones({ phones, onChange }) {
-  const { t } = useLang();
-  const list = phones.length ? phones : [""];
+// Up to `max` values of one kind (phones, emails).
+function ListField({ label, hint, values, onChange, max, addLabel, testid, ...input }) {
+  const list = values.length ? values : [""];
   const setAt = (i, v) => onChange(list.map((p, j) => (j === i ? v : p)));
   return (
     <div>
-      <span className="block text-sm font-medium text-gray-800 mb-1.5">{t("gen_phones")}</span>
+      <span className="block text-sm font-medium text-gray-800 mb-1.5">{label}</span>
       <div className="space-y-2">
         {list.map((p, i) => (
           <div key={i} className="flex gap-2">
-            <input data-testid={`gen-phone-${i}`} type="tel" inputMode="tel" value={p} placeholder="+91 94144 22558" aria-label={`${t("gen_phones")} ${i + 1}`}
+            <input data-testid={`${testid}-${i}`} value={p} aria-label={`${label} ${i + 1}`} {...input}
               onChange={(e) => setAt(i, e.target.value)} className={inputCls} />
-            <IconButton icon={X} label={t("remove")} onClick={() => onChange(list.filter((_, j) => j !== i))} className="shrink-0" />
+            <IconButton icon={X} label="Remove" onClick={() => onChange(list.filter((_, j) => j !== i))} className="shrink-0" />
           </div>
         ))}
       </div>
-      {list.length < MAX_PHONES && (
-        <Button variant="ghost" size="sm" icon={Plus} onClick={() => onChange([...list, ""])} className="mt-2">{t("gen_add_phone")}</Button>
+      {list.length < max && (
+        <Button variant="ghost" size="sm" icon={Plus} onClick={() => onChange([...list, ""])} className="mt-2">{addLabel}</Button>
       )}
-      <span className="block text-[13px] text-gray-600 mt-1.5">{t("gen_phones_hint")}</span>
+      {hint && <span className="block text-[13px] text-gray-600 mt-1.5">{hint}</span>}
+    </div>
+  );
+}
+
+const WEEKDAYS_10_830 = Object.fromEntries(DAYS.map((d) => [d, { closed: d === "sun", open: "10:00", close: "20:30" }]));
+const timeCls = `${inputCls} num w-[7.5rem] sm:w-32 px-2.5`;
+
+// Opening hours for each day of the week. Not set = hidden on the website.
+function HoursEditor({ hours, onChange }) {
+  const set = Object.keys(hours || {}).length === 7;
+  if (!set) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center">
+        <p className="text-sm text-gray-600">Opening hours are not set, so websites don't show them.</p>
+        <Button data-testid="gen-hours-set" variant="soft" size="sm" icon={Clock} className="mt-3" onClick={() => onChange(WEEKDAYS_10_830)}>Set opening hours</Button>
+      </div>
+    );
+  }
+  const setDay = (d, patch) => onChange({ ...hours, [d]: { ...hours[d], ...patch } });
+  const copyFirst = () => {
+    const first = DAYS.find((d) => !hours[d].closed) || "mon";
+    onChange(Object.fromEntries(DAYS.map((d) => [d, hours[d].closed ? hours[d] : { ...hours[first], closed: false }])));
+  };
+  return (
+    <div>
+      <div className="rounded-xl border border-gray-200 divide-y divide-gray-100">
+        {DAYS.map((d) => {
+          const h = hours[d];
+          return (
+            <div key={d} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-2.5">
+              <span className="w-10 text-sm font-semibold text-gray-900">{DAY_NAMES.en[d]}</span>
+              <Toggle testid={`gen-hours-${d}-open`} label={`${DAY_NAMES.en[d]} open`} checked={!h.closed}
+                onChange={(v) => setDay(d, { closed: !v, open: h.open || "10:00", close: h.close || "20:30" })} />
+              {h.closed ? <span className="text-sm text-gray-500">Closed</span> : (
+                <span className="flex items-center gap-2">
+                  <input type="time" aria-label={`${DAY_NAMES.en[d]} opens`} value={h.open} onChange={(e) => setDay(d, { open: e.target.value })} className={timeCls} />
+                  <span className="text-gray-500 text-sm">to</span>
+                  <input type="time" aria-label={`${DAY_NAMES.en[d]} closes`} value={h.close} onChange={(e) => setDay(d, { close: e.target.value })} className={timeCls} />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        <Button variant="ghost" size="sm" icon={Copy} onClick={copyFirst}>Same time every open day</Button>
+        <Button variant="ghost" size="sm" icon={Trash2} onClick={() => onChange({})}>Don't show hours</Button>
+      </div>
+    </div>
+  );
+}
+
+// Shows how the address reads in the visitor's language, as websites will show it.
+function AddressPreview({ form }) {
+  const hi = formatAddress(form, "hi");
+  const en = formatAddress(form, "en");
+  if (!en) return null;
+  return (
+    <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm">
+      <span className="block text-[13px] font-medium text-gray-600 mb-1">Shown as</span>
+      <span className="block text-gray-900">{en}</span>
+      {hi !== en && <span className="block text-gray-700 mt-0.5" lang="hi">{hi}</span>}
     </div>
   );
 }
@@ -146,8 +229,12 @@ export default function General() {
     if (!form.shop_name?.trim()) { toast.error(t("gen_name_required")); return; }
     setSaving(true);
     try {
-      const { logo: _skip, logo_src: _src, ...fields } = form;
-      const body = { ...fields, phones: (form.phones || []).map((p) => p.trim()).filter(Boolean) };
+      const { logo: _skip, logo_src: _src, classic: _c, languages: _l, address: _a, address_hi: _ah, ...fields } = form;
+      const body = {
+        ...fields,
+        phones: (form.phones || []).map((p) => p.trim()).filter(Boolean),
+        emails: (form.emails || []).map((p) => p.trim()).filter(Boolean),
+      };
       if (logo !== null) body.logo = logo;
       const { data } = await api.put("/settings/brand", body);
       update(data);
@@ -160,66 +247,73 @@ export default function General() {
   };
 
   if (!form) return <div className="space-y-4"><Skeleton className="h-64 rounded-2xl" /><Skeleton className="h-64 rounded-2xl" /></div>;
+  const languages = form.languages || [{ code: "hi", name: "हिंदी" }];
   const f = { form, set };
+  const lf = { ...f, languages };
   const logoShown = logo !== null ? logo : brand.logo_src;
+  const embed = form.map_embed_url && /src="|^https:\/\/(www\.)?google\./.test(form.map_embed_url)
+    ? (form.map_embed_url.match(/src="([^"]+)"/) || [null, form.map_embed_url])[1] : "";
 
   return (
     <div className="space-y-4" data-testid="general-settings">
       <p className="flex gap-2.5 rounded-2xl bg-brand-50 text-brand-900 px-4 py-3 text-sm">
-        <Languages size={18} className="shrink-0 mt-0.5 text-brand-700" aria-hidden="true" /> {t("gen_bilingual_note")}
+        <Store size={18} className="shrink-0 mt-0.5 text-brand-700" aria-hidden="true" /> {t("gen_source_note")}
       </p>
       <Card>
         <CardHeader icon={Store} title={t("gen_identity")} subtitle={t("gen_identity_sub")} />
         <div className="px-5 pb-5 space-y-5">
           <LogoPicker logo={logoShown} onChange={setLogoDirty} name={form.shop_name} />
-          <Pair k="shop_name" label={`${t("gen_shop_name")} *`} hint={t("gen_shop_name_hint")} maxLength={60} {...f} />
-          <Pair k="tagline" label={t("gen_tagline")} hint={t("gen_tagline_hint")} maxLength={80} {...f} />
-          <Pair k="legal_name" label={t("gen_legal_name")} hint={t("gen_legal_name_hint")} maxLength={100} {...f} />
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Text k="founded_year" label={t("gen_founded")} hint={t("gen_founded_hint")} inputMode="numeric" maxLength={4} placeholder="1962" {...f} />
-            <Field label={t("gen_accent")} hint={t("gen_accent_hint")}>
-              <div className="flex gap-2">
-                <input type="color" aria-label={t("gen_accent")} value={/^#[0-9a-f]{6}$/i.test(form.accent_color || "") ? form.accent_color : "#880D1E"}
-                  onChange={(e) => set("accent_color", e.target.value.toUpperCase())} className="h-12 sm:h-11 w-14 rounded-xl border border-gray-300 bg-white p-1 cursor-pointer shrink-0" />
-                <input data-testid="gen-accent_color" value={form.accent_color || ""} maxLength={7} onChange={(e) => set("accent_color", e.target.value)} className={`${inputCls} num uppercase`} />
-              </div>
-            </Field>
-          </div>
+          <LangText k="shop_name" label={`${t("gen_shop_name")} *`} hint={t("gen_shop_name_hint")} maxLength={60} {...lf} />
+          <LangText k="short_name" label="Short name" hint="Where space is short: WhatsApp messages, phone headers. Empty: the shop name" maxLength={30} placeholder="Somani" {...lf} />
+          <LangText k="legal_name" label="Owner / firm name" hint="Registered or family name, shown in footers and the shop screen" maxLength={100} {...lf} />
         </div>
       </Card>
 
       <Card>
-        <CardHeader icon={BookOpen} title={t("gen_about")} subtitle={t("gen_about_sub")} />
+        <CardHeader icon={MapPin} title="Address" subtitle="One line each. Websites, WhatsApp messages and the map all use it" />
         <div className="px-5 pb-5 space-y-5">
-          <Pair k="description" label={t("gen_description")} hint={t("gen_description_hint")} area maxLength={300} {...f} />
-          <Pair k="story_body" label={t("gen_story")} hint={t("gen_story_hint")} area maxLength={600} {...f} />
-          <Pair k="founder" label={t("gen_founder")} hint={t("gen_founder_hint")} maxLength={100} {...f} />
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Text k="brands_count" label={t("gen_brands_count")} hint={t("gen_brands_count_hint")} maxLength={10} placeholder="100+" {...f} />
+          <LangText k="address_street" label="Street address" hint="Shop number, building, street, area and landmark" maxLength={160} placeholder="Shop 4, Station Road, near Clock Tower" {...lf} />
+          <div className="grid sm:grid-cols-2 gap-x-4 gap-y-5">
+            <LangText k="city" label="City / town" maxLength={60} placeholder="Jaipur" {...lf} />
+            <LangText k="state" label="State" maxLength={60} placeholder="Rajasthan" {...lf} />
+            <Text k="pincode" label="PIN code" inputMode="numeric" maxLength={10} placeholder="302001" {...f} />
+            <LangText k="country" label="Country" maxLength={60} placeholder="India" {...lf} />
           </div>
+          <AddressPreview form={form} />
         </div>
       </Card>
 
       <Card>
-        <CardHeader icon={MapPin} title={t("gen_location")} subtitle={t("gen_location_sub")} />
+        <CardHeader icon={Clock} title="Opening hours" subtitle="Websites show them and whether the shop is open right now" />
         <div className="px-5 pb-5 space-y-5">
-          <Pair k="address_line1" label={t("gen_address1")} maxLength={120} {...f} />
-          <Pair k="address_line2" label={t("gen_address2")} maxLength={120} {...f} />
-          <Pair k="locality" label={t("gen_locality")} hint={t("gen_locality_hint")} maxLength={60} {...f} />
-          <Pair k="city" label={t("gen_city")} hint={t("gen_city_hint")} maxLength={60} {...f} />
-          <Pair k="hours" label={t("gen_hours")} hint={t("gen_hours_hint")} maxLength={100} {...f} />
-          <Text k="directions_url" type="url" label={t("gen_directions")} hint={t("gen_directions_hint")} placeholder="https://maps.app.goo.gl/..." {...f} />
+          <HoursEditor hours={form.hours} onChange={(v) => set("hours", v)} />
+          {Object.keys(form.hours || {}).length === 7 && (
+            <p className="text-sm text-gray-600"><span className="font-medium text-gray-800">Shown as:</span> {hoursSummary(form, "en")}</p>
+          )}
+          <LangText k="hours_note" label="Hours note" hint="Optional, like “Open on all festivals” or “Lunch 2–3 PM”" maxLength={100} {...lf} />
         </div>
       </Card>
 
       <Card>
-        <CardHeader icon={Phone} title={t("gen_contact")} subtitle={t("gen_contact_sub")} />
+        <CardHeader icon={MapIcon} title="Map and reviews" subtitle="Directions button, map preview and the reviews link" />
         <div className="px-5 pb-5 space-y-5">
-          <Phones phones={form.phones || []} onChange={(v) => set("phones", v)} />
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Text k="whatsapp" type="tel" inputMode="tel" label="WhatsApp" hint={t("gen_whatsapp_hint")} placeholder="+91 94144 22558" {...f} />
-            <Text k="email" type="email" inputMode="email" autoCapitalize="none" label={t("gen_email")} hint={t("gen_email_hint")} placeholder="shop@example.com" {...f} />
+          <Text k="maps_url" type="url" label="Google Maps link" hint="Google Maps > your shop > Share > Copy link. Empty: the Directions button searches the address" placeholder="https://maps.app.goo.gl/..." {...f} />
+          <div>
+            <Text k="map_embed_url" area label="Google Maps preview" hint="Google Maps > your shop > Share > Embed a map > Copy HTML, and paste it here. Empty: a map of the address" placeholder='<iframe src="https://www.google.com/maps/embed?pb=..."></iframe>' {...f} />
+            {embed && <iframe title="Map preview" src={embed} loading="lazy" className="mt-3 w-full h-48 rounded-xl border border-gray-200" />}
           </div>
+          <Text k="reviews_url" type="url" label="Google reviews link" hint="Google Business Profile > Ask for reviews > copy the link. Used by websites and WhatsApp" placeholder="https://g.page/r/..." {...f} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader icon={Phone} title={t("gen_contact")} subtitle="Call, WhatsApp and email buttons everywhere" />
+        <div className="px-5 pb-5 space-y-5">
+          <ListField label={t("gen_phones")} hint={t("gen_phones_hint")} values={form.phones || []} onChange={(v) => set("phones", v)}
+            max={MAX_PHONES} addLabel={t("gen_add_phone")} testid="gen-phone" type="tel" inputMode="tel" placeholder="+91 94144 22558" />
+          <Text k="whatsapp" type="tel" inputMode="tel" label="WhatsApp number" hint={t("gen_whatsapp_hint")} placeholder="+91 94144 22558" {...f} />
+          <ListField label="Emails" hint="Up to 3. The first one is used for the email button" values={form.emails || []} onChange={(v) => set("emails", v)}
+            max={MAX_EMAILS} addLabel="Add email" testid="gen-email" type="email" inputMode="email" autoCapitalize="none" placeholder="shop@example.com" />
         </div>
       </Card>
 
@@ -229,21 +323,9 @@ export default function General() {
           <Text k="instagram" type="url" label="Instagram" placeholder="https://instagram.com/..." {...f} />
           <Text k="facebook" type="url" label="Facebook" placeholder="https://facebook.com/..." {...f} />
           <Text k="youtube" type="url" label="YouTube" placeholder="https://youtube.com/@..." {...f} />
+          <Text k="x" type="url" label="X (Twitter)" placeholder="https://x.com/..." {...f} />
+          <Text k="linkedin" type="url" label="LinkedIn" placeholder="https://linkedin.com/company/..." {...f} />
           <Text k="website" type="url" label={t("gen_website")} placeholder="https://..." {...f} />
-        </div>
-      </Card>
-
-      <Card>
-        <CardHeader icon={Globe} title={t("gen_site")} subtitle={t("gen_site_sub")}
-          actions={<a href="/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline shrink-0">{t("gen_open_site")} <ExternalLink size={14} aria-hidden="true" /></a>} />
-        <div className="px-5 pb-5 space-y-5">
-          <Pair k="footer_note" label={t("gen_footer_note")} hint={t("gen_footer_note_hint")} maxLength={200} {...f} />
-          <Text k="seo_description" area label={t("gen_seo")} hint={t("gen_seo_hint")} maxLength={300} {...f} />
-          <div className="grid sm:grid-cols-3 gap-3">
-            <Switch k="show_brands" label={t("gen_show_brands")} {...f} />
-            <Switch k="show_promise" label={t("gen_show_promise")} {...f} />
-            <Switch k="show_staff_login" label={t("gen_show_staff")} {...f} />
-          </div>
         </div>
       </Card>
 
