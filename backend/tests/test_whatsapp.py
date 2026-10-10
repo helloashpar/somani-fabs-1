@@ -103,9 +103,11 @@ async def env(monkeypatch):
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("WHATSAPP_APP_SECRET", SECRET)
     monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify-me")
-    await db.shop_settings.insert_one({"shop_id": "default", "shop_profile": {
-        "name": "Test Shop", "phone": "+91 90000 00000", "slug": "test-shop",
-        "review_url": "https://g.page/r/test", "maps_url": "https://maps.app.goo.gl/test"},
+    # Name, phone and links come from Shop setup > General.
+    await db.settings.insert_one({"id": "global", "brand": {
+        "shop_name": "Test Shop", "phones": ["+91 90000 00000"],
+        "reviews_url": "https://g.page/r/test", "maps_url": "https://maps.app.goo.gl/test"}})
+    await db.shop_settings.insert_one({"shop_id": "default", "shop_profile": {"slug": "test-shop"},
         "whatsapp": {"language": "english"}})
     yield db, meta
     if real:
@@ -217,12 +219,13 @@ def test_hinglish_naming():
     assert tpl.meta_language("hindi") == "hi"
 
 
-def test_url_button_uses_fixed_base_and_slug_suffix():
+def test_url_button_uses_fixed_base_and_link_suffix():
     sub = tpl.submission("review_request", "english", "https://app.example.com/")
     btn = sub["components"][-1]["buttons"][0]
     assert btn["url"] == "https://app.example.com/r/{{1}}"
-    comps = tpl.send_components("review_request", "english", tpl.SAMPLE_VARS, slug="myshop")
-    assert comps[-1]["parameters"][0]["text"] == "myshop/review"
+    assert btn["example"] == ["https://app.example.com/r/review"]
+    comps = tpl.send_components("review_request", "english", tpl.SAMPLE_VARS)
+    assert comps[-1]["parameters"][0]["text"] == "review"
 
 
 # ---------- consent gating + welcome ----------
@@ -477,15 +480,13 @@ async def test_super_can_update_config(client):
     c, (db, _) = client
     h = {"X-Role": "super"}
     r = await c.put("/api/whatsapp/config", headers=h, json={
-        "shop_profile": {"name": "New", "slug": "new-shop", "review_url": "https://g.page/x"},
         "whatsapp": {"language": "hindi", "send_looks": {"allow_staff": False}}})
     assert r.status_code == 200, r.text
     cfg = (await c.get("/api/whatsapp/config", headers=h)).json()
     assert cfg["whatsapp"]["language"] == "hindi"
     assert cfg["whatsapp"]["send_looks"] == {"on": True, "allow_staff": False}
-    assert cfg["shop_profile"]["slug"] == "new-shop"
-    bad = await c.put("/api/whatsapp/config", headers=h, json={"shop_profile": {"review_url": "http://x"}})
-    assert bad.status_code == 400
+    assert cfg["shop_profile"]["name"] == "Test Shop"  # from General, read-only here
+    await db.settings.update_one({"id": "global"}, {"$set": {"brand.shop_name": "New"}})
     preview = (await c.get("/api/whatsapp/templates", headers=h)).json()
     assert preview["language"] == "hindi" and "New" in preview["templates"][0]["body"]
 
@@ -511,7 +512,9 @@ async def test_webhook_verify_handshake(client):
 
 async def test_short_links_redirect(client):
     c, _ = client
-    r = await c.get("/r/test-shop/review", follow_redirects=False)
+    r = await c.get("/r/review", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "https://g.page/r/test"
-    assert (await c.get("/r/test-shop/map", follow_redirects=False)).headers["location"].startswith("https://maps")
-    assert (await c.get("/r/unknown/review", follow_redirects=False)).status_code == 404
+    assert (await c.get("/r/map", follow_redirects=False)).headers["location"].startswith("https://maps")
+    assert (await c.get("/r/other", follow_redirects=False)).status_code == 404
+    # Links sent before, with the old shop part, still work.
+    assert (await c.get("/r/test-shop/review", follow_redirects=False)).headers["location"] == "https://g.page/r/test"

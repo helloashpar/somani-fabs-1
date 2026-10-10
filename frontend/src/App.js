@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 import { LanguageProvider } from "@/i18n";
 import { BrandProvider } from "@/lib/brand";
-import Landing from "@/pages/Landing";
+import PublicHome, { SiteFrame, DraftPreview } from "@/site/Site";
 import Display from "@/pages/Display";
 import AdminApp from "@/admin/AdminApp";
 
@@ -14,7 +14,9 @@ function App() {
         <BrowserRouter>
           <Toaster position="top-center" richColors />
           <Routes>
-            <Route path="/" element={<Landing />} />
+            <Route path="/" element={<PublicHome />} />
+            <Route path="/site-frame" element={<SiteFrame />} />
+            <Route path="/site-preview/:id" element={<DraftPreview />} />
             <Route path="/admin" element={<AdminApp />} />
             <Route path="/d/:secret" element={<Display />} />
           </Routes>

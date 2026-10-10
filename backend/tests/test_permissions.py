@@ -230,7 +230,8 @@ async def test_general_settings_are_public_and_validated(env):
     r = await c.get("/api/public/brand")
     assert r.status_code == 200 and r.json()["shop_name"] == "Somani Fabs" and r.json()["logo"] == ""
     assert (await c.put("/api/settings/brand", headers=staff, json={"shop_name": "X"})).status_code == 403
-    for bad in ({"shop_name": ""}, {"accent_color": "red"}, {"founded_year": "62"},
+    for bad in ({"shop_name": ""}, {"pincode": "!!"}, {"emails": ["nope"]}, {"map_embed_url": "https://evil.com/x"},
+                {"hours": {"mon": {"open": "25:00", "close": "20:00"}}},
                 {"instagram": "instagram.com/x"}, {"phones": ["abc"]}, {"logo": "data:image/png;base64,xx"}):
         assert (await c.put("/api/settings/brand", headers=owner, json=bad)).status_code == 400, bad
     import base64, io
@@ -238,12 +239,21 @@ async def test_general_settings_are_public_and_validated(env):
     buf = io.BytesIO(); Image.new("RGBA", (1200, 600), (200, 0, 0, 128)).save(buf, format="PNG")
     logo = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
     r = await c.put("/api/settings/brand", headers=owner, json={
-        "shop_name": "Pareek Textiles", "accent_color": "#1a2b3c", "phones": ["+91 98000 00009"],
-        "whatsapp": "98000 00009", "instagram": "https://instagram.com/pareek", "logo": logo})
+        "shop_name": "Pareek Textiles", "shop_name_hi": "पारीक टेक्सटाइल्स", "phones": ["+91 98000 00009"],
+        "whatsapp": "98000 00009", "instagram": "https://instagram.com/pareek", "logo": logo,
+        "emails": ["a@b.in"], "address_street": "Station Road", "pincode": "302001",
+        "map_embed_url": '<iframe src="https://www.google.com/maps/embed?pb=!1m18" width="600"></iframe>',
+        "hours": {d: {"open": "10:00", "close": "20:30", "closed": d == "sun"} for d in
+                  ("mon", "tue", "wed", "thu", "fri", "sat", "sun")},
+        "accent_color": "#1a2b3c"})  # website content: not a General field, ignored
     assert r.status_code == 200, r.text
     b = r.json()
-    assert b["shop_name"] == "Pareek Textiles" and b["accent_color"] == "#1A2B3C" and b["whatsapp"] == "+919800000009"
+    assert b["shop_name"] == "Pareek Textiles" and b["shop_name_hi"] == "पारीक टेक्सटाइल्स" and b["whatsapp"] == "+919800000009"
     assert b["phones"] == ["+91 98000 00009"] and b["city"] == "Kuchaman City"  # untouched fields keep defaults
+    assert b["address"] == "Station Road, Kuchaman City, Rajasthan 302001, India"
+    assert b["map_embed_url"] == "https://www.google.com/maps/embed?pb=!1m18"
+    assert b["hours"]["sun"]["closed"] and b["hours"]["mon"]["open"] == "10:00"
+    assert b["classic"]["accent_color"] == "#880D1E"
     assert b["logo"].startswith("/api/public/logo?v=")
     img = await c.get(b["logo"])
     assert img.status_code == 200 and img.headers["content-type"] == "image/png"
@@ -251,3 +261,23 @@ async def test_general_settings_are_public_and_validated(env):
     assert "brand_logo" not in (await c.get("/api/settings", headers=staff)).json()
     r = await c.put("/api/settings/brand", headers=owner, json={"logo": ""})
     assert r.json()["logo"] == "" and (await c.get("/api/public/logo")).status_code == 404
+
+
+async def test_general_reads_and_upgrades_older_saved_fields(env):
+    c, db, owner, _ = env
+    await db.settings.insert_one({"id": "global", "brand": {
+        "shop_name": "Old", "address_line1": "Gandhi Chowk", "address_line2": "Nagaur, Rajasthan 341001",
+        "hours": "Mon-Sat 10-9", "email": "old@shop.in", "directions_url": "https://maps.app.goo.gl/old",
+        "tagline": "Since forever"}})
+    b = (await c.get("/api/public/brand")).json()
+    assert b["address_street"] == "Gandhi Chowk" and b["pincode"] == "341001" and b["state"] == "Rajasthan"
+    assert b["hours_note"] == "Mon-Sat 10-9" and b["hours"] == {} and b["emails"] == ["old@shop.in"]
+    assert b["maps_url"] == "https://maps.app.goo.gl/old" and b["classic"]["tagline"] == "Since forever"
+    r = await c.put("/api/settings/brand", headers=owner, json={"shop_name": "Old Shop"})
+    assert r.status_code == 200, r.text
+    stored = (await db.settings.find_one({"id": "global"}))["brand"]
+    assert "address_line1" not in stored and "email" not in stored and stored["emails"] == ["old@shop.in"]
+    assert stored["hours"] == {} and stored["hours_note"] == "Mon-Sat 10-9" and stored["tagline"] == "Since forever"
+    # A cleared field stays cleared instead of falling back to the default.
+    r = await c.put("/api/settings/brand", headers=owner, json={"legal_name": "", "shop_name_hi": ""})
+    assert r.json()["legal_name"] == "" and r.json()["shop_name_hi"] == ""

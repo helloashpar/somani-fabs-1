@@ -74,7 +74,7 @@ function Login({ onLogin }) {
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900 mt-10">{t("login_title")}</h1>
           <p className="text-gray-600 mt-1">{t("login_sub")}</p>
           <form onSubmit={submit} className="mt-8 space-y-4" noValidate>
-            <Field label={t("login_id")} hint={t("login_id_hint")}>
+            <Field label={t("login_id")}>
               <input data-testid="login-username" value={u} onChange={(e) => setU(e.target.value)} autoFocus={!remembered}
                 type="text" placeholder="98765 43210"
                 autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" enterKeyHint="next" className={inputCls} />

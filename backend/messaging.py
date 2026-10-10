@@ -31,6 +31,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+import brand
 import permissions
 import whatsapp_service as wa
 import whatsapp_templates as tpl
@@ -105,8 +106,10 @@ def spawn(coro):
 
 
 # ---------- Shop settings ----------
-DEFAULT_PROFILE = {"name": "", "short_name": "", "address": "", "city": "", "phone": "",
-                   "maps_url": "", "review_url": "", "slug": ""}
+# The shop's name, address, phone and map / review links come from Shop setup >
+# General (brand.py), the one place they are kept. Button links are simply
+# <site>/r/review and <site>/r/map.
+DEFAULT_PROFILE: Dict[str, str] = {}
 DEFAULT_WA = {
     "language": "hinglish",
     "consent_default": False,
@@ -124,9 +127,18 @@ def _merge(defaults: Dict, stored: Dict) -> Dict:
     return out
 
 
+async def general_profile() -> Dict[str, str]:
+    """What messages say about the shop, from Shop setup > General."""
+    doc = await db.settings.find_one({"id": "global"}, {"_id": 0, "brand": 1}) or {}
+    b = brand.merged(doc.get("brand"))
+    return {"name": b["shop_name"], "short_name": b["short_name"], "address": b["address"],
+            "city": b["city"], "phone": (b["phones"] or [""])[0],
+            "maps_url": b["maps_url"], "review_url": b["reviews_url"]}
+
+
 async def shop_settings() -> Dict[str, Any]:
     doc = await db.shop_settings.find_one({"shop_id": SHOP_ID}, {"_id": 0}) or {}
-    return {"shop_profile": _merge(DEFAULT_PROFILE, doc.get("shop_profile")),
+    return {"shop_profile": {**await general_profile(), **_merge(DEFAULT_PROFILE, doc.get("shop_profile"))},
             "whatsapp": _merge(DEFAULT_WA, doc.get("whatsapp")),
             "wa_last_webhook_at": doc.get("wa_last_webhook_at"),
             "wa_number": doc.get("wa_number", "")}
@@ -231,8 +243,7 @@ async def send_template_message(phone: str, name: str, values: Dict, purpose: st
     lang = s["whatsapp"]["language"]
     values = {**shop_vars(s["shop_profile"]), **values}
     shown = tpl.render(name, lang, values)
-    comps = tpl.send_components(name, lang, values, slug=s["shop_profile"]["slug"],
-                                media_id=media_id, payload=payload)
+    comps = tpl.send_components(name, lang, values, media_id=media_id, payload=payload)
     return await _send(
         {"kind": "template", "purpose": purpose, "template": shown["meta_name"],
          "category": shown["category"], "body": shown["body"], "phone": phone,
@@ -686,7 +697,6 @@ async def resend_receipt(sid: str, user=Depends(current_user)):
 
 
 # ---------- Super admin: Marketing tab ----------
-_URL = re.compile(r"^https://\S+$")
 
 
 def _clean_config(body: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
@@ -694,12 +704,6 @@ def _clean_config(body: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, An
     if "shop_profile" in body:
         p = {k: str((body["shop_profile"] or {}).get(k, current["shop_profile"][k]) or "").strip()[:300]
              for k in DEFAULT_PROFILE}
-        p["slug"] = p["slug"].lower()
-        if p["slug"] and not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,39}", p["slug"]):
-            raise HTTPException(400, "Slug: 2-40 small letters, numbers or dashes")
-        for k in ("maps_url", "review_url"):
-            if p[k] and not _URL.match(p[k]):
-                raise HTTPException(400, "Links must start with https://")
         upd["shop_profile"] = p
     if "whatsapp" in body:
         w = _merge(current["whatsapp"], body["whatsapp"] or {})
@@ -793,14 +797,13 @@ async def template_preview(lang: Optional[str] = None, user=Depends(current_user
     lang = tpl.check_language(lang or s["whatsapp"]["language"])
     values = {**tpl.SAMPLE_VARS, **{k: v for k, v in shop_vars(s["shop_profile"]).items() if v != "-"}}
     base = wa.public_base_url() or "https://<your-domain>"
-    slug = s["shop_profile"]["slug"] or "<slug>"
     out = []
     for name, spec in tpl.TEMPLATES.items():
         r = tpl.render(name, lang, values)
         links = [b.get("link") for b in (tpl._spec(name)["buttons"] or [])]
         for b, link in zip(r["buttons"], links):
             if link:
-                b["url"] = f"{base}/r/{slug}/{link}"
+                b["url"] = f"{base}/r/{link}"
         out.append(r)
     free = [{"name": k, "body": tpl.free_text(k, lang, values)} for k in tpl.FREE_FORM]
     return {"language": lang, "templates": out, "free_form": free}
@@ -878,16 +881,21 @@ async def shop_qr(user=Depends(current_user)):
 
 
 # ---------- Public review / map redirects ----------
-@public_router.get("/r/{slug}/{kind}")
-async def short_link(slug: str, kind: str):
+@public_router.get("/r/{kind}")
+async def short_link(kind: str):
     """Template buttons need one fixed base URL, so they point here and we
     redirect to the shop's own Google review / Maps link."""
-    doc = await db.shop_settings.find_one({"shop_profile.slug": slug.lower()}, {"_id": 0, "shop_profile": 1})
-    profile = (doc or {}).get("shop_profile") or {}
+    profile = await general_profile()
     target = {"review": profile.get("review_url"), "map": profile.get("maps_url")}.get(kind)
     if not target:
         raise HTTPException(404, "Not found")
     return RedirectResponse(target, status_code=302)
+
+
+@public_router.get("/r/{_old}/{kind}")
+async def short_link_old(_old: str, kind: str):
+    """Links in messages sent before (/r/<shop>/review) keep working."""
+    return await short_link(kind)
 
 
 async def ensure_indexes():

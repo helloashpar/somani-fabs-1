@@ -124,35 +124,35 @@ function Connection({ config }) {
   );
 }
 
-const PROFILE_FIELDS = [
-  ["name", "mk_shop_name"], ["short_name", "mk_short_name"], ["address", "mk_address"], ["city", "mk_city"],
-  ["phone", "mk_phone"], ["maps_url", "mk_maps"], ["review_url", "mk_review"], ["slug", "mk_slug"],
+// Name, address, phone and the map / review links are the shop's details from
+// Shop setup > General (shown here read-only). Message buttons link to
+// <site>/r/review and <site>/r/map, which open those links.
+const FROM_GENERAL = [
+  ["name", "mk_shop_name"], ["short_name", "mk_short_name"], ["address", "mk_address"],
+  ["phone", "mk_phone"], ["maps_url", "mk_maps"], ["review_url", "mk_review"],
 ];
 
-function Profile({ config, onSaved }) {
+function Profile({ config }) {
   const { t } = useLang();
-  const [p, setP] = useState(config.shop_profile);
-  const save = async () => {
-    try { await api.put("/whatsapp/config", { shop_profile: p }); toast.success("Saved"); onSaved(); }
-    catch (e) { toast.error(apiErr(e)); }
-  };
-  const base = config.public_base_url || "https://<PUBLIC_BASE_URL>";
+  const p = config.shop_profile;
+  const base = config.public_base_url || window.location.origin;
   return (
-    <Card title={t("mk_profile")}>
-      {PROFILE_FIELDS.map(([k, label]) => (
-        <div key={k}>
-          <label className="text-xs text-gray-500">{t(label)}</label>
-          <input data-testid={`profile-${k}`} value={p[k] || ""} onChange={(e) => setP({ ...p, [k]: e.target.value })}
-            placeholder={k.endsWith("_url") ? "https://..." : ""} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+    <div className="space-y-4">
+      <Card title={t("mk_from_general")} right={<a href="/admin?p=more&i=general" className="text-sm font-medium text-brand-700 hover:underline shrink-0">{t("mk_edit_general")}</a>}>
+        <p className="text-sm text-gray-600">{t("mk_from_general_sub")}</p>
+        <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+          {FROM_GENERAL.map(([k, label]) => (
+            <div key={k} className="grid grid-cols-[8rem_1fr] gap-3 px-3 py-2.5 text-sm">
+              <dt className="text-gray-600">{t(label)}</dt>
+              <dd data-testid={`profile-${k}`} className={`min-w-0 break-words ${p[k] ? "text-gray-900" : "text-gray-400"}`}>{p[k] || "—"}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2.5 break-all" data-testid="profile-links">
+          {t("mk_links_note")}<br />{base}/r/review<br />{base}/r/map
         </div>
-      ))}
-      {p.slug && (
-        <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2.5 break-all">
-          {t("mk_links_note")}<br />{base}/r/{p.slug}/review<br />{base}/r/{p.slug}/map
-        </div>
-      )}
-      <button data-testid="save-profile" onClick={save} className="w-full bg-brand-700 text-white py-2.5 rounded-lg font-medium">{t("save")}</button>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -327,7 +327,7 @@ function WhatsAppSettings({ config, reload }) {
       <UnderlineTabs testid="mk" value={section} onChange={setSection} tabs={SECTIONS.map((s) => ({ id: s.id, label: t(s.label) }))} />
       <div key={section} className="animate-in fade-in duration-150">
         {section === "connection" && <Connection config={config} />}
-        {section === "profile" && <Profile config={config} onSaved={reload} />}
+        {section === "profile" && <Profile config={config} />}
         {section === "automations" && <Automations config={config} onSaved={reload} />}
         {section === "templates" && <Templates config={config} />}
         {section === "log" && <Log />}

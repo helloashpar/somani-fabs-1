@@ -2,13 +2,15 @@ import React, { useState, useEffect } from "react";
 import { api, apiErr } from "@/lib/api";
 import { useLang } from "@/i18n";
 import { toast } from "sonner";
-import { Monitor, MessageCircle, Copy, Loader2, Tag, ImagePlus, ScrollText, ListPlus, Languages, Shirt, SlidersHorizontal, Users, LogOut, Layers, Megaphone, Settings2, UserCog, Store } from "lucide-react";
+import { Monitor, MessageCircle, Copy, Loader2, Tag, ScrollText, ListPlus, Languages, Shirt, SlidersHorizontal, Users, LogOut, Layers, Megaphone, Settings2, UserCog, Store, Globe } from "lucide-react";
 import { WhatsAppScreen } from "@/admin/Marketing";
 import CategoryConfig from "@/admin/CategoryConfig";
 import Collection from "@/admin/Collection";
 import SessionFields from "@/admin/SessionFields";
 import Team from "@/admin/Team";
 import General from "@/admin/General";
+import Websites from "@/admin/website/Websites";
+import IdleScreen from "@/admin/IdleScreen";
 import { useBrand } from "@/lib/brand";
 import { can, isSuper } from "@/admin/perms";
 import { Button, Card, CardHeader, Crumbs, Field, MenuGroup, MenuRow, Page, PageHeader, Segmented, Skeleton, Tiles, inputCls } from "@/admin/ui";
@@ -30,6 +32,7 @@ export const MORE_ITEMS = [
   { id: "config", group: "catalog", icon: SlidersHorizontal, label: "set_configuration", sub: "tile_config_sub", ok: (u) => can(u, "catalog_manage"), header: true },
   { id: "whatsapp", group: "marketing", icon: MessageCircle, label: "WhatsApp", sub: "tile_whatsapp_sub", ok: (u) => can(u, "marketing_manage"), header: true },
   { id: "general", group: "shop", icon: Store, label: "set_general", sub: "tile_general_sub", ok: (u) => can(u, "settings_manage"), header: true },
+  { id: "website", group: "shop", icon: Globe, label: "set_website", sub: "tile_website_sub", ok: (u) => can(u, "settings_manage"), header: true },
   { id: "display", group: "shop", icon: Monitor, label: "set_display", sub: "tile_display_sub", ok: () => true },
   { id: "language", group: "shop", icon: Languages, label: "app_language", sub: "tile_language_sub", ok: (u) => can(u, "settings_manage"), header: true },
   { id: "watermark", group: "shop", icon: Tag, label: "watermark", sub: "tile_watermark_sub", ok: (u) => can(u, "settings_manage") },
@@ -103,6 +106,7 @@ export function MoreItem({ id, user, onUp }) {
   const g = GROUPS.find((x) => x.id === it.group);
   const body = {
     general: <General />,
+    website: <Websites />,
     collection: <Collection />,
     config: <CategoryConfig />,
     whatsapp: <WhatsAppScreen />,
@@ -157,18 +161,10 @@ function Logs() {
 function DisplaySettings({ canManage }) {
   const { t } = useLang();
   const [settings, setSettings] = useState(null);
-  const [idle, setIdle] = useState("");
   useEffect(() => {
-    api.get("/settings").then((r) => { setSettings(r.data); setIdle(r.data.idle_image || ""); })
-      .catch((e) => toast.error(apiErr(e)));
+    api.get("/settings").then((r) => setSettings(r.data)).catch((e) => toast.error(apiErr(e)));
   }, []);
   const link = settings ? `${window.location.origin}/d/${settings.display_secret}` : "";
-  const onFile = (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    if (f.size > 6 * 1024 * 1024) { toast.error("Image is too large (max 6 MB)"); return; }
-    const r = new FileReader(); r.onload = () => setIdle(r.result); r.readAsDataURL(f);
-  };
-  const save = () => run(() => api.put("/settings", { idle_image: idle }), "Saved");
   return (
     <div className="space-y-4">
       <Card>
@@ -178,19 +174,7 @@ function DisplaySettings({ canManage }) {
           <Button data-testid="copy-link" icon={Copy} onClick={() => { navigator.clipboard.writeText(link); toast.success("Copied"); }} className="h-12 sm:h-11">{t("copy")}</Button>
         </div>
       </Card>
-      {canManage && (
-        <Card>
-          <CardHeader icon={ImagePlus} title={t("idle_image")} subtitle={t("idle_image_hint")} />
-          <div className="px-5 pb-5 grid sm:grid-cols-[1fr_auto] gap-4 items-end">
-            <label className="block cursor-pointer">
-              {idle ? <img src={idle} alt="" className="w-full h-48 object-contain bg-gray-950 rounded-xl" />
-                : <span className="flex flex-col items-center justify-center h-48 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 text-gray-700 text-sm gap-2 hover:bg-brand-50 hover:border-brand-300 transition-colors"><ImagePlus size={24} className="text-brand-700" />{t("upload_image")}</span>}
-              <input data-testid="idle-image-input" type="file" accept="image/*" onChange={onFile} className="sr-only" />
-            </label>
-            <Button data-testid="save-display" size="lg" onClick={save}>{t("save")}</Button>
-          </div>
-        </Card>
-      )}
+      {canManage && <IdleScreen />}
     </div>
   );
 }
